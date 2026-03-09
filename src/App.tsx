@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { DashboardView } from './components/DashboardView';
@@ -7,15 +7,15 @@ import { FilterSidebar } from './components/FilterSidebar';
 import { VentaRow, VentasFilters, DetailFilterOptions, getInitialFilters, DashboardMetrics } from './types';
 import {
   fetchVentas, fetchVentasAgregadas, fetchVentasAgregadasPrevio, PAGE_SIZE,
-  fetchSucursales, fetchRubros, fetchDescCuentas, fetchTopClientes, fetchCuotas,
-  fetchFamilias, fetchCategorias, fetchTipos, fetchGeneros, fetchProveedores,
+  fetchFilterOptions, getMediosPagoFromCache, fetchTopClientes, fetchCuotas,
+  fetchTipos, fetchGeneros, fetchProveedores,
   DateRange,
 } from './lib/salesService';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 const EMPTY_DETAIL_OPTIONS: DetailFilterOptions = {
-  sucursales: [], rubros: [], cuentas: [], clientes: [], cuotas: [],
+  sucursales: [], rubros: [], mediosPago: [], cuentas: [], clientes: [], cuotas: [],
   familias: [], categorias: [], tipos: [], generos: [], proveedores: [],
 };
 
@@ -38,25 +38,40 @@ export default function App() {
   const [dashPrevData, setDashPrevData] = useState<DashboardMetrics | null>(null);
   const [tableData, setTableData] = useState<VentaRow[]>([]);
   const [totalCount, setTotalCount] = useState(0);
+  const [totalImporteGlobal, setTotalImporteGlobal] = useState(0);
   const [currentPage, setCurrentPage] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
-  // ── Helper para cargar opciones de filtros ────────────────────────────────
+  // ── Helper para cargar opciones de filtros ────────────────────────────
+  // Usa /api/ventas/options para obtener DISTINCT values en una sola llamada SQL.
   const loadOptions = async (filters: VentasFilters, setOptions: (o: DetailFilterOptions) => void, setLoading: (b: boolean) => void) => {
     const range: DateRange = { fechaDesde: filters.fechaDesde, fechaHasta: filters.fechaHasta };
     setLoading(true);
     try {
-      const [suc, rub, cuentas, clientes, cuotas, fam, cat, tip, gen, prov] = await Promise.all([
-        fetchSucursales(range), fetchRubros(range), fetchDescCuentas(range),
-        fetchTopClientes(range), fetchCuotas(range), fetchFamilias(range),
-        fetchCategorias(range), fetchTipos(range), fetchGeneros(range), fetchProveedores(range),
+      // Una sola llamada al servidor en vez de 9 fetches paralelos
+      const [opts, clientes, cuotas, tipos, generos, proveedores] = await Promise.all([
+        fetchFilterOptions(range),
+        fetchTopClientes(range),
+        fetchCuotas(range),
+        fetchTipos(range),
+        fetchGeneros(range),
+        fetchProveedores(filters),
       ]);
       setOptions({
-        sucursales: suc, rubros: rub, cuentas, clientes, cuotas,
-        familias: fam, categorias: cat, tipos: tip, generos: gen, proveedores: prov,
+        sucursales: opts.sucursales,
+        rubros:     [],              // no existe en esta vista, queda vacío
+        mediosPago: opts.mediosPago,
+        familias:   opts.familias,
+        categorias: opts.categorias,
+        cuentas:    [],
+        clientes,
+        cuotas,
+        tipos,
+        generos,
+        proveedores,
       });
     } catch (e) {
       console.error('Error cargando opciones:', e);
@@ -67,6 +82,51 @@ export default function App() {
 
   useEffect(() => { loadOptions(dashFilters, setDashOptions, setIsLoadingDashOptions); }, [dashFilters.fechaDesde, dashFilters.fechaHasta]);
   useEffect(() => { loadOptions(detailFilters, setDetailOptions, setIsLoadingDetailOptions); }, [detailFilters.fechaDesde, detailFilters.fechaHasta]);
+
+  // ── Reset en cascada: si el período cambia y algún medioPago seleccionado ya no ──
+  // ── existe en las opciones del nuevo período, se elimina del filtro activo.    ──
+  useEffect(() => {
+    if (!dashOptions.mediosPago.length || !dashFilters.mediosPago.length) return;
+    const disponibles = new Set(dashOptions.mediosPago);
+    const aun_validos = dashFilters.mediosPago.filter(mp => disponibles.has(mp));
+    if (aun_validos.length !== dashFilters.mediosPago.length) {
+      console.log('[App] Reseteando mediosPago del Dashboard:', dashFilters.mediosPago, '→', aun_validos);
+      setDashFilters(f => ({ ...f, mediosPago: aun_validos }));
+    }
+  }, [dashOptions.mediosPago]);
+
+  useEffect(() => {
+    if (!detailOptions.mediosPago.length || !detailFilters.mediosPago.length) return;
+    const disponibles = new Set(detailOptions.mediosPago);
+    const aun_validos = detailFilters.mediosPago.filter(mp => disponibles.has(mp));
+    if (aun_validos.length !== detailFilters.mediosPago.length) {
+      console.log('[App] Reseteando mediosPago del Detalle:', detailFilters.mediosPago, '→', aun_validos);
+      setDetailFilters(f => ({ ...f, mediosPago: aun_validos }));
+    }
+  }, [detailOptions.mediosPago]);
+
+  // ── useMemo: opciones de medioPago derivadas del cache (síncrono) ──────────
+  // Cuando el cache para el período ya está cargado, esto re-calcula sin fetch.
+  // Complementa a loadOptions (asíncrono) como una versión instánea y reactiva.
+  const dashMediosPagoMemo = useMemo(
+    () => getMediosPagoFromCache(dashFilters.fechaDesde, dashFilters.fechaHasta),
+    [dashFilters.fechaDesde, dashFilters.fechaHasta, dashOptions.mediosPago]
+  );
+  const detailMediosPagoMemo = useMemo(
+    () => getMediosPagoFromCache(detailFilters.fechaDesde, detailFilters.fechaHasta),
+    [detailFilters.fechaDesde, detailFilters.fechaHasta, detailOptions.mediosPago]
+  );
+
+  // Merge: preferimos el resultado del useMemo (más fresco) si está disponible
+  const dashOptionsEfectivas: DetailFilterOptions = useMemo(() => ({
+    ...dashOptions,
+    mediosPago: dashMediosPagoMemo.length ? dashMediosPagoMemo : dashOptions.mediosPago,
+  }), [dashOptions, dashMediosPagoMemo]);
+
+  const detailOptionsEfectivas: DetailFilterOptions = useMemo(() => ({
+    ...detailOptions,
+    mediosPago: detailMediosPagoMemo.length ? detailMediosPagoMemo : detailOptions.mediosPago,
+  }), [detailOptions, detailMediosPagoMemo]);
 
   // ── Load dashboard (aggregated) ───────────────────────────────────────────
   const loadDashboardData = useCallback(async (f: VentasFilters) => {
@@ -90,10 +150,11 @@ export default function App() {
   const loadTableData = useCallback(async (f: VentasFilters, page: number) => {
     console.log(`[App] loadTableData - Calling page ${page} with:`, f);
     try {
-      const { data, count } = await fetchVentas(f, page * PAGE_SIZE);
-      console.log(`[App] loadTableData - Received ${data.length} rows, total count: ${count}`);
+      const { data, count, totalImporteGlobal: tig } = await fetchVentas(f, page * PAGE_SIZE);
+      console.log(`[App] loadTableData - Received ${data.length} rows, total count: ${count}, totalImporte: ${tig}`);
       setTableData(data);
       setTotalCount(count);
+      setTotalImporteGlobal(tig);
       setError(null);
     } catch (e: any) {
       console.error('Table error:', e);
@@ -106,7 +167,10 @@ export default function App() {
     console.log('[App] useEffect dashFilters triggered:', dashFilters);
     setIsLoading(true);
     loadDashboardData(dashFilters).finally(() => setIsLoading(false));
-  }, [dashFilters]);
+  // Re-fetcha cuando cambia cualquier filtro que el servidor ahora maneja
+  }, [dashFilters.fechaDesde, dashFilters.fechaHasta,
+      dashFilters.mediosPago, dashFilters.familias, dashFilters.categorias,
+      dashFilters.sucursales]);
 
   useEffect(() => {
     console.log('[App] useEffect detailFilters triggered:', detailFilters);
@@ -152,7 +216,8 @@ export default function App() {
           }
           isLoading={isLoading}
           error={error}
-          tableData={activeView === 'detail' ? tableData : []}
+          detailFilters={activeView === 'detail' ? detailFilters : undefined}
+          totalCount={activeView === 'detail' ? totalCount : undefined}
         />
 
         <div className="flex-1 overflow-hidden relative w-full flex flex-col">
@@ -172,7 +237,7 @@ export default function App() {
                   <FilterSidebar
                     filters={dashFilters}
                     onFiltersChange={setDashFilters}
-                    options={dashOptions}
+                    options={dashOptionsEfectivas}
                     isLoadingOptions={isLoadingDashOptions}
                   />
                   <div className="flex-1 overflow-auto">
@@ -196,13 +261,13 @@ export default function App() {
                 <FilterSidebar
                   filters={detailFilters}
                   onFiltersChange={setDetailFilters}
-                  options={detailOptions}
+                  options={detailOptionsEfectivas}
                   isLoadingOptions={isLoadingDetailOptions}
                 />
 
                 {/* Table + pagination */}
                 <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-                  <SalesTable data={tableData} isLoading={isLoading} />
+                  <SalesTable data={tableData} isLoading={isLoading} totalImporteGlobal={totalImporteGlobal} />
 
                   {/* Pagination Footer */}
                   <div className="h-14 border-t border-border-dark bg-[#0f172a] shrink-0 flex items-center justify-between px-6 z-20">

@@ -193,6 +193,13 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
         onFiltersChange({ ...filters, [key]: next });
     };
 
+    const toggleMedioPago = (val: string) => {
+        const next = filters.mediosPago.includes(val)
+            ? filters.mediosPago.filter(v => v !== val)
+            : [...filters.mediosPago, val];
+        onFiltersChange({ ...filters, mediosPago: next });
+    };
+
     const toggleCuota = (val: number) => {
         const next = filters.cuotas.includes(val)
             ? filters.cuotas.filter(v => v !== val)
@@ -208,6 +215,7 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
 
     const activeCount =
         filters.sucursales.length + filters.rubros.length +
+        filters.mediosPago.length +
         filters.cuentas.length + filters.clientes.length +
         filters.cuotas.length +
         filters.familias.length + filters.categorias.length +
@@ -410,23 +418,21 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
                     }
                 </Accordion>
 
-                {/* Medio de Pago */}
+                {/* Medio de Pago — valores dinámicos desde la columna SQL 'Medio de Pago' */}
                 <Accordion
                     title="Medio de Pago"
                     icon={<CreditCard size={14} />}
-                    count={filters.cuentas.length}
+                    count={filters.mediosPago.length}
                     isLoading={isLoadingOptions}
                 >
-                    {options.cuentas.length === 0
+                    {options.mediosPago.length === 0
                         ? <span className="text-xs text-slate-500">Sin datos para el período</span>
-                        : options.cuentas.map(c => (
-                            <CheckItem
-                                key={c}
-                                label={c}
-                                checked={filters.cuentas.includes(c)}
-                                onChange={() => toggle('cuentas', c)}
-                            />
-                        ))
+                        : <SearchableCheckList
+                            items={options.mediosPago}
+                            selected={filters.mediosPago}
+                            onToggle={toggleMedioPago}
+                            placeholder="Buscar medio de pago..."
+                        />
                     }
                 </Accordion>
 

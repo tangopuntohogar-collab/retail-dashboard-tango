@@ -1,36 +1,49 @@
-/** Fila exacta que retorna la vista v_ventas_consolidadas */
+/** Fila que retorna la vista Dashboard_Ventas_Local (columnas reales SQL Server) */
 export interface VentaRow {
-  nro_sucursal: string;
-  t_comp: string;
-  n_comp: string;
-  fecha: string;              // timestamp → string al serializar
-  cod_articu: string;
-  cod_client: string;
-  razon_social: string;
-  cod_cond_venta: string;
-  desc_cond_venta: string;
-  cantidad: number;
+  // ── Columnas reales de la vista SQL ──────────────────────────────────
+  fecha: string;                    // Fecha
+  nro_sucursal: string;             // Nro. Sucursal
+  t_comp: string;                   // Tipo de comprobante
+  n_comp: string;                   // Nro. Comprobante
+  cod_vendedor: string;             // Cód. vendedor
+  cod_articu: string;               // Cód. Artículo
+  descripcio: string;               // Descripción
+  medioPago: string | null;         // Medio de Pago  ← NUEVO
+  precioNeto: number | null;        // Precio Neto    ← NUEVO
+  precioUnitario: number | null;    // Precio Unitario ← NUEVO
+  totalIVA: number | null;          // Total cIVA     ← NUEVO
+  familia: string | null;           // Familia
+  categoria: string | null;         // Categoria
+  cantidad: number;                 // Cantidad
+
+  // ── Aliases y campos derivados (backwards compat con SalesTable/Header) ──
+  /** @alias totalIVA — importe proporcional c/IVA (fuente de verdad de facturación) */
+  imp_prop_c_iva: number | null;
+  /** @alias totalIVA */
   importe_c_iva: number;
-  imp_prop_c_iva: number | null;     // monto proporcional (fuente de verdad de facturación)
-  precio_neto: number | null;        // precio neto sin IVA
-  pr_ult_cpa_c_iva: number | null;   // último precio de compra c/IVA
-  costo: number | null;              // costo unitario (nuevo campo en la vista)
-  margen_contribucion: number;
-  descripcio: string;
-  desc_adic: string | null;
-  rubro: string;
-  monto_comprobante: number;
-  cod_cta: string;
-  desc_cuenta: string;
-  cant_cuotas: number | null;
-  /** 'Cuenta Corriente' | 'Contado/Tarjeta' */
-  modalida_venta: string;
-  porcentaje_rentabilidad: number;
-  familia: string | null;
-  categoria: string | null;
-  tipo: string | null;
-  genero: string | null;
-  proveedor: string | null;
+  /** @alias precioNeto */
+  precio_neto: number | null;
+  /** @alias precioUnitario */
+  pr_ult_cpa_c_iva: number | null;
+
+  // ── Campos opcionales (no en esta vista, pueden venir de otras fuentes) ──
+  cod_client?: string;
+  razon_social?: string;
+  cod_cond_venta?: string;
+  desc_cond_venta?: string;
+  costo?: number | null;
+  margen_contribucion?: number;
+  desc_adic?: string | null;
+  rubro?: string;
+  monto_comprobante?: number;
+  cod_cta?: string;
+  desc_cuenta?: string;
+  cant_cuotas?: number | null;
+  modalida_venta?: string;
+  porcentaje_rentabilidad?: number;
+  tipo?: string | null;
+  genero?: string | null;
+  proveedor?: string | null;
 }
 
 /** Filtros unificados para todas las vistas (Dashboard y Detalle) */
@@ -40,8 +53,9 @@ export interface VentasFilters {
   sucursales: string[];        // nro_sucursal
   rubros: string[];
   modalidades: string[];       // modalida_venta
+  mediosPago: string[];        // medioPago (campo real de SQL)
   search: string;              // ilike en descripcio o cod_articu
-  cuentas: string[];           // desc_cuenta
+  cuentas: string[];           // desc_cuenta (legacy)
   clientes: string[];          // razon_social
   cuotas: number[];            // cant_cuotas seleccionadas
   comprobante: string;         // ilike en n_comp
@@ -69,6 +83,7 @@ export const getInitialFilters = (): VentasFilters => {
     sucursales: [],
     rubros: [],
     modalidades: [],
+    mediosPago: [],
     search: '',
     cuentas: [],
     clientes: [],
@@ -90,9 +105,10 @@ export type DetailFilters = VentasFilters;
 export interface DetailFilterOptions {
   sucursales: string[];
   rubros: string[];
-  cuentas: string[];
+  mediosPago: string[];   // valores únicos de medioPago (columna SQL 'Medio de Pago')
+  cuentas: string[];      // legacy
   clientes: string[];
-  cuotas: number[];      // valores distintos de cant_cuotas
+  cuotas: number[];
   familias: string[];
   categorias: string[];
   tipos: string[];

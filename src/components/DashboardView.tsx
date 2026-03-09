@@ -220,7 +220,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
     <div className="absolute inset-0 flex items-center justify-center z-30 bg-[#020617]/70 backdrop-blur-sm">
       <div className="flex flex-col items-center gap-3">
         <Loader2 size={36} className="animate-spin text-primary" />
-        <span className="text-sm text-slate-400">Consultando Supabase...</span>
+        <span className="text-sm text-slate-400">Cargando datos locales...</span>
       </div>
     </div>
   );
@@ -577,9 +577,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
               ))}
               {rubroPoints.map((pt, i) => {
                 const range = maxMargen - minMargen || 1;
-                const left = (pt.totalCantidad / maxCant) * 88 + 5;
-                const bottom = ((pt.avgMargen - minMargen) / range) * 80 + 10;
-                const size = Math.max(8, Math.min(22, (pt.totalCantidad / maxCant) * 20 + 8));
+                const left = (pt.total_cantidad / maxCant) * 88 + 5;
+                const bottom = ((pt.avg_margen - minMargen) / range) * 80 + 10;
+                const size = Math.max(8, Math.min(22, (pt.total_cantidad / maxCant) * 20 + 8));
                 return (
                   <div
                     key={i}
@@ -595,7 +595,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
                       }}
                     />
                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-slate-900 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20 pointer-events-none border border-slate-700">
-                      {pt.rubro}: {(pt.avgMargen ?? 0).toFixed(1)}%
+                      {pt.rubro}: {(pt.avg_margen ?? 0).toFixed(1)}%
                     </div>
                   </div>
                 );

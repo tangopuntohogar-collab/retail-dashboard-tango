@@ -5,9 +5,12 @@ import { Loader2 } from 'lucide-react';
 interface SalesTableProps {
   data: VentaRow[];
   isLoading: boolean;
+  /** SUM([Total cIVA]) de TODOS los registros que coinciden con los filtros activos,
+   *  independientemente de la paginación. Viene de server.ts → meta.totalImporteGlobal */
+  totalImporteGlobal?: number;
 }
 
-export const SalesTable: React.FC<SalesTableProps> = ({ data, isLoading }) => {
+export const SalesTable: React.FC<SalesTableProps> = ({ data, isLoading, totalImporteGlobal }) => {
 
   /** Formato moneda: 2 decimales + separador de miles (es-AR → 1.250.000,00) */
   const formatCurrency = (val: number | null) =>
@@ -33,19 +36,23 @@ export const SalesTable: React.FC<SalesTableProps> = ({ data, isLoading }) => {
     return row.desc_cond_venta ?? '-';
   };
 
+  /**
+   * Badge para Medio de Pago: usa directamente el campo medioPago de la vista SQL.
+   * Colorea según el tipo de pago detectado en el texto.
+   */
   const getMedioPagoBadge = (row: VentaRow) => {
-    const label = getMedioPago(row);
+    const label = row.medioPago ?? '-';
     const lc = label.toLowerCase();
 
     let styles = 'bg-slate-800 text-slate-400 border-slate-700';
-    if (String(row.cod_cond_venta) === '1') {
-      if (lc.includes('efec') || lc.includes('caja') || lc.includes('contado')) {
-        styles = 'bg-blue-500/10 text-blue-400 border-blue-500/20';
-      } else {
-        styles = 'bg-violet-500/10 text-violet-400 border-violet-500/20';
-      }
-    } else {
+    if (lc.includes('efec') || lc.includes('caja') || lc.includes('contado')) {
+      styles = 'bg-blue-500/10 text-blue-400 border-blue-500/20';
+    } else if (lc.includes('tarj') || lc.includes('débito') || lc.includes('credito') || lc.includes('crédito')) {
+      styles = 'bg-violet-500/10 text-violet-400 border-violet-500/20';
+    } else if (lc.includes('cta') || lc.includes('corriente') || lc.includes('financ')) {
       styles = 'bg-orange-500/10 text-orange-400 border-orange-500/20';
+    } else if (label !== '-') {
+      styles = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
     }
 
     return (
@@ -67,10 +74,12 @@ export const SalesTable: React.FC<SalesTableProps> = ({ data, isLoading }) => {
     );
   };
 
-  /** Importe proporcional, con fallback al original si el campo aún no existe */
-  const impProp = (row: VentaRow) => Number(row.imp_prop_c_iva ?? row.importe_c_iva ?? 0);
+  /** Total c/IVA — fuente de verdad de facturación */
+  const impProp = (row: VentaRow) => Number(row.totalIVA ?? row.imp_prop_c_iva ?? row.importe_c_iva ?? 0);
 
-  const precioUnit = (row: VentaRow) => {
+  /** Precio unitario desde el campo real de SQL, con fallback calculado */
+  const precioUnitDisplay = (row: VentaRow): number => {
+    if (row.precioUnitario != null) return row.precioUnitario;
     const cant = row.cantidad ?? 0;
     const imp = impProp(row);
     return cant > 0 ? imp / cant : 0;
@@ -83,8 +92,8 @@ export const SalesTable: React.FC<SalesTableProps> = ({ data, isLoading }) => {
   const formatCuotas = (cuotas: number | null) =>
     !cuotas ? '-' : `${cuotas}c`;
 
-  // 22 columnas: Suc. | Tipo | Comprobante | Fecha | Familia | Cat. | Tipo Art. | Gen. | Prov | Cód.Art | Descripción | Cliente | Rubro | Medio de Pago | Cuotas | Cant. | Precio Neto | Precio Unit. | Total c/IVA | Costo Unit. | Costo Total | Rentab.
-  const COL_COUNT = 22;
+  // 21 columnas: Suc. | Tipo | Comprobante | Fecha | Familia | Cat. | Tipo Art. | Gen. | Prov | Cód.Art | Descripción | Cliente | Rubro | Medio de Pago | Cuotas | Cant. | Precio Neto | Precio Unit. | Total c/IVA | Costo Unit. | Rentab.
+  const COL_COUNT = 21;
 
   return (
     <div className="flex-1 overflow-auto relative w-full">
@@ -108,8 +117,8 @@ export const SalesTable: React.FC<SalesTableProps> = ({ data, isLoading }) => {
             <th className="px-4 py-3.5 min-w-[100px] whitespace-nowrap">Familia</th>
             <th className="px-4 py-3.5 min-w-[100px] whitespace-nowrap">Categoría</th>
             <th className="px-4 py-3.5 min-w-[100px] whitespace-nowrap">Tipo Art.</th>
-            <th className="px-4 py-3.5 min-w-[100px] whitespace-nowrap">Género</th>
-            <th className="px-4 py-3.5 min-w-[120px] whitespace-nowrap">Proveedor</th>
+            <th className="px-4 py-3.5 min-w-[120px] whitespace-nowrap">Género</th>
+            <th className="px-4 py-3.5 min-w-[150px] whitespace-nowrap">Proveedor</th>
             {/* Artículo — Info Adicional ahora dentro de Descripción */}
             <th className="px-4 py-3.5 w-[105px] whitespace-nowrap">Cód. Art.</th>
             <th className="px-4 py-3.5 min-w-[220px]">Descripción</th>
@@ -125,7 +134,6 @@ export const SalesTable: React.FC<SalesTableProps> = ({ data, isLoading }) => {
             <th className="px-4 py-3.5 text-right w-[135px] whitespace-nowrap">Precio Unit.</th>
             <th className="px-4 py-3.5 text-right w-[145px] whitespace-nowrap">Total c/IVA</th>
             <th className="px-4 py-3.5 text-right w-[135px] whitespace-nowrap">Costo Unit.</th>
-            <th className="px-4 py-3.5 text-right w-[145px] whitespace-nowrap">Costo Total</th>
             <th className="px-4 py-3.5 text-right w-[95px]">Rentab.</th>
           </tr>
         </thead>
@@ -182,7 +190,7 @@ export const SalesTable: React.FC<SalesTableProps> = ({ data, isLoading }) => {
                   {item.genero ?? '-'}
                 </td>
 
-                {/* Proveedor */}
+		{/* Proveedor */}
                 <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
                   {item.proveedor ?? '-'}
                 </td>
@@ -238,17 +246,19 @@ export const SalesTable: React.FC<SalesTableProps> = ({ data, isLoading }) => {
                   {(item.cantidad ?? 0).toFixed(0)}
                 </td>
 
-                {/* Precio Neto — 2 decimales */}
+                {/* Precio Neto — usa el campo real de SQL */}
                 <td className="px-4 py-3 text-right text-xs text-slate-400 whitespace-nowrap">
-                  {item.precio_neto != null ? formatCurrency(item.precio_neto) : <span className="text-slate-700">—</span>}
+                  {item.precioNeto != null
+                    ? formatCurrency(item.precioNeto)
+                    : <span className="text-slate-700">—</span>}
                 </td>
 
-                {/* Precio unitario (importe_c_iva / cantidad) — 2 decimales */}
+                {/* Precio Unitario — usa el campo real de SQL */}
                 <td className="px-4 py-3 text-right text-xs text-slate-400 whitespace-nowrap">
-                  {formatCurrency(precioUnit(item))}
+                  {formatCurrency(precioUnitDisplay(item))}
                 </td>
 
-                {/* Total c/IVA proporcional — 2 decimales, destacado */}
+                {/* Total c/IVA — campo totalIVA de SQL, formato moneda destacado */}
                 <td className="px-4 py-3 text-right text-slate-200 font-semibold whitespace-nowrap">
                   {formatCurrency(impProp(item))}
                 </td>
@@ -256,13 +266,6 @@ export const SalesTable: React.FC<SalesTableProps> = ({ data, isLoading }) => {
                 {/* Costo unitario (= últ. precio de compra c/IVA) — 2 decimales */}
                 <td className="px-4 py-3 text-right text-xs text-slate-400 whitespace-nowrap">
                   {item.costo != null ? formatCurrency(item.costo) : <span className="text-slate-700">—</span>}
-                </td>
-
-                {/* Costo total = costo × cantidad — 2 decimales */}
-                <td className="px-4 py-3 text-right text-xs text-slate-400 whitespace-nowrap">
-                  {item.costo != null
-                    ? formatCurrency(item.costo * (item.cantidad ?? 0))
-                    : <span className="text-slate-700">—</span>}
                 </td>
 
                 {/* Rentabilidad */}
@@ -274,24 +277,38 @@ export const SalesTable: React.FC<SalesTableProps> = ({ data, isLoading }) => {
           )}
         </tbody>
 
-        {/* ─── Footer de totales ─────────────────────────── */}
+        {/* ─── Footer de totales ────────────────── */}
         {data.length > 0 && (
           <tfoot className="sticky bottom-0 z-20">
             <tr className="bg-[#0f172a] border-t-2 border-primary/60">
-              {/* Columnas 1–12: etiqueta TOTAL GENERAL */}
+              {/* Etiqueta */}
               <td
                 colSpan={17}
                 className="px-4 py-3 text-right text-xs font-bold text-slate-300 tracking-widest uppercase whitespace-nowrap"
               >
-                Total General ({data.length} ítems)
+                <span>Total General (todos los registros filtrados)</span>
               </td>
 
-              {/* Columna 13: Total c/IVA — alineado bajo el encabezado */}
-              <td className="px-4 py-3 text-right font-bold text-emerald-400 whitespace-nowrap text-sm tabular-nums">
-                {formatCurrency(data.reduce((acc, r) => acc + impProp(r), 0))}
+              {/* Total c/IVA — usa el SUM global del servidor */}
+              <td className="px-4 py-3 text-right whitespace-nowrap">
+                <span className="block font-bold text-emerald-400 text-sm tabular-nums">
+                  {formatCurrency(totalImporteGlobal ?? data.reduce((acc, r) => acc + impProp(r), 0))}
+                </span>
+                {/* Si hay más páginas, mostramos el subtotal de la página en texto secundario */}
+                {totalImporteGlobal != null && data.length > 0 && (
+                  (() => {
+                    const pageSum = data.reduce((acc, r) => acc + impProp(r), 0);
+                    const diff = Math.abs(totalImporteGlobal - pageSum) > 1;
+                    return diff ? (
+                      <span className="block text-[10px] text-slate-500 tabular-nums mt-0.5">
+                        pág: {formatCurrency(pageSum)}
+                      </span>
+                    ) : null;
+                  })()
+                )}
               </td>
 
-              {/* Columnas 14–17: vacías para mantener el layout */}
+              {/* Columnas restantes vacías */}
               <td colSpan={3} />
             </tr>
           </tfoot>
