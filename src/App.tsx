@@ -3,6 +3,7 @@ import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { DashboardView } from './components/DashboardView';
 import { SalesTable } from './components/SalesTable';
+import { StockView } from './components/StockView';
 import { FilterSidebar } from './components/FilterSidebar';
 import { VentaRow, VentasFilters, DetailFilterOptions, getInitialFilters, DashboardMetrics } from './types';
 import {
@@ -20,7 +21,7 @@ const EMPTY_DETAIL_OPTIONS: DetailFilterOptions = {
 };
 
 export default function App() {
-  const [activeView, setActiveView] = useState<'dashboard' | 'detail'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'detail' | 'stock'>('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // ── States independientes para Dashboard ──────────────────────────────────
@@ -185,9 +186,9 @@ export default function App() {
     loadTableData(detailFilters, currentPage).finally(() => setIsLoading(false));
   }, [currentPage]);
 
-  const handleViewChange = (view: 'dashboard' | 'detail') => {
+  const handleViewChange = (view: 'dashboard' | 'detail' | 'stock') => {
     setActiveView(view);
-    setIsSidebarCollapsed(view === 'detail');
+    setIsSidebarCollapsed(view === 'detail' || view === 'stock');
   };
 
   const handlePageChange = (delta: number) =>
@@ -208,11 +209,19 @@ export default function App() {
 
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
         <Header
-          title={activeView === 'dashboard' ? 'Tablero General' : 'Detalle de Ventas'}
+          title={
+            activeView === 'dashboard'
+              ? 'Tablero General'
+              : activeView === 'detail'
+                ? 'Detalle de Ventas'
+                : 'Análisis de Stock'
+          }
           subtitle={
             activeView === 'dashboard'
               ? 'Operaciones Diarias > Vista Dashboard'
-              : 'Operaciones Diarias > Vista Grilla'
+              : activeView === 'detail'
+                ? 'Operaciones Diarias > Vista Grilla'
+                : 'Operaciones Diarias > Análisis de Inventario'
           }
           isLoading={isLoading}
           error={error}
@@ -315,6 +324,23 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+              </motion.div>
+            )}
+
+            {/* ── Stock View ────────────────────────────────────────────── */}
+            {activeView === 'stock' && (
+              <motion.div
+                key="stock"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+                className="h-full flex-1 min-h-0"
+              >
+                <StockView 
+                  options={detailOptionsEfectivas} 
+                  isLoadingOptions={isLoadingDetailOptions} 
+                />
               </motion.div>
             )}
 

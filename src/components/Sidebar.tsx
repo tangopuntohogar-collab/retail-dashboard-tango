@@ -5,12 +5,13 @@ import {
   ChevronLeft,
   Users,
   LogOut,
+  Package,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface SidebarProps {
-  activeView: 'dashboard' | 'detail';
-  onViewChange: (view: 'dashboard' | 'detail') => void;
+  activeView: 'dashboard' | 'detail' | 'stock';
+  onViewChange: (view: 'dashboard' | 'detail' | 'stock') => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
 }
@@ -70,6 +71,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <TableProperties size={20} className="shrink-0" />
               {!isCollapsed && <span className="text-sm font-medium whitespace-nowrap">Detalle de Ventas</span>}
+            </button>
+            <button
+              onClick={() => onViewChange('stock')}
+              className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors cursor-pointer w-full ${activeView === 'stock' ? 'bg-primary/20 text-primary border border-primary/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+              title="Análisis de Stock"
+            >
+              <Package size={20} className="shrink-0" />
+              {!isCollapsed && <span className="text-sm font-medium whitespace-nowrap">Análisis de Stock</span>}
             </button>
           </nav>
         </div>

@@ -51,15 +51,14 @@ async function exportarExcel(filters: VentasFilters, onProgress?: (msg: string) 
   const rows = json.data ?? [];
   onProgress?.(`Generando Excel con ${rows.length} registros...`);
 
-  // ── Encabezados ───────────────────────────────────────────────────────────
+  // ── Encabezados (21 columnas para coincidir con SalesTable.tsx) ──────────
   const HEADERS = [
-    'Sucursal', 'Tipo Comp.', 'Comprobante', 'Fecha',
-    'Cód. Artículo', 'Descripción',
-    'Medio de Pago',
-    'Familia', 'Categoría',
-    'Proveedor',
-    'Cantidad',
-    'Precio Neto', 'Precio Unit.', 'Total c/IVA',
+    'Sucursal', 'Tipo', 'Comprobante', 'Fecha',
+    'Familia', 'Categoría', 'Tipo Art.', 'Género', 'Proveedor',
+    'Cód. Art.', 'Descripción', 'Cliente', 'Rubro',
+    'Medio de Pago', 'Cuotas',
+    'Cant.', 'Precio Neto', 'Precio Unit.', 'Total c/IVA',
+    'Costo Unit.', 'Rentab.'
   ];
 
   const formatDate = (ts: string) => {
@@ -67,63 +66,94 @@ async function exportarExcel(filters: VentasFilters, onProgress?: (msg: string) 
     return new Date(ts).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
 
-  // ── Datos (1 array por fila) ───────────────────────────────────────────────
-  const dataRows = rows.map((r: any) => [
-    r['Nro. Sucursal'] ?? '',
-    r['Tipo de comprobante'] ?? '',
-    r['Nro. Comprobante'] ?? '',
-    formatDate(r['Fecha'] ?? ''),
-    r['Cód. Artículo'] ?? '',
-    r['Descripción'] ?? '',
-    r['Medio de Pago'] ?? '',
-    r['Familia'] ?? '',
-    r['Categoria'] ?? '',
-    r['PROVEEDOR (Adic.)'] ?? '',
-    r['Cantidad'] ?? 0,
-    r['Precio Neto']     != null ? Number(r['Precio Neto'])     : '',
-    r['Precio Unitario'] != null ? Number(r['Precio Unitario']) : '',
-    r['Total cIVA']      != null ? Number(r['Total cIVA'])      : 0,
-  ]);
+  // ── Datos (21 campos mapeados) ───────────────────────────────────────────
+  const dataRows = rows.map((r: any) => {
+    // Total c/IVA — fuente de verdad (imp_prop_c_iva es el alias usado en SQL)
+    const impProp = Number(r['Total cIVA'] ?? r['imp_prop_c_iva'] ?? 0);
+    const cant = Number(r['Cantidad'] ?? 0);
+    const pUnit = r['Precio Unitario'] != null ? Number(r['Precio Unitario']) : (cant > 0 ? impProp / cant : 0);
+    
+    // Costo — se busca en 'costo' o en el alias 'CostoUnitario' de SQL
+    const costo = r['costo'] != null ? Number(r['costo']) : (r['CostoUnitario'] != null ? Number(r['CostoUnitario']) : 0);
+    
+    // Rentabilidad DINÁMICA: ((P.Unit - Costo) / Costo) * 100
+    // Si el costo es <= 0, la rentabilidad es 0 para evitar errores
+    const rentabilidad = (costo > 0) ? ((pUnit - costo) / costo) * 100 : 0;
+
+    return [
+      r['Nro. Sucursal'] ?? '',
+      r['Tipo de comprobante'] ?? '', // t_comp
+      r['Nro. Comprobante'] ?? '',    // n_comp
+      formatDate(r['Fecha'] ?? ''),
+      r['Familia'] ?? '-',
+      r['Categoria'] ?? '-',
+      r['tipo'] ?? '-',
+      r['genero'] ?? '-',
+      r['PROVEEDOR (Adic.)'] ?? r['proveedor'] ?? '-',
+      r['Cód. Artículo'] ?? '',
+      (r['Descripción'] ?? '') + (r['desc_adic'] ? ` (${r['desc_adic']})` : ''),
+      (r['razon_social'] ?? '-') + (r['cod_client'] ? ` [${r['cod_client']}]` : ''),
+      r['rubro'] ?? '-',
+      r['Medio de Pago'] ?? '-',
+      r['cant_cuotas'] ? `${r['cant_cuotas']}c` : '-',
+      cant,
+      r['Precio Neto'] != null ? Number(r['Precio Neto']) : '',
+      pUnit,
+      impProp,
+      costo > 0 ? costo : '',
+      rentabilidad.toFixed(2) + '%'
+    ];
+  });
 
   // ── Fila de autosuma en la última fila ────────────────────────────────────
   const dataStart = 2;                      // fila 1 = encabezados, fila 2..N = datos
   const dataEnd   = dataRows.length + 1;    // última fila de datos (1-indexed)
   const totalRow  = dataRows.length + 2;    // fila del total (debajo de los datos)
 
-  // Col 14 = N: Suc|Tipo|Comp|Fecha|Cod|Desc|MP|Fam|Cat|Prov|Cant|PrecioNeto|PrecioUnit|TotalIVA
-  const TOTAL_COL = 'N';
+  // Col 19 = S: Suc(1)|Tipo(2)|Comp(3)|Fech(4)|Fam(5)|Cat(6)|TArt(7)|Gen(8)|Prov(9)|Cód(10)|Desc(11)|Clie(12)|Rub(13)|MP(14)|Cuo(15)|Cant(16)|PNet(17)|PUni(18)|Total(19)
+  const TOTAL_COL = 'S';
   const sumaFormula = `SUM(${TOTAL_COL}${dataStart}:${TOTAL_COL}${dataEnd})`;
 
   const footerRow = [
     'TOTAL GENERAL', '', '', '',
-    '', '', '',
-    '', '', '',   // Proveedor (col 10)
-    '',           // Cantidad
-    '',           // Precio Neto
-    '',           // Precio Unit.
-    { t: 'n', f: sumaFormula },   // Fórmula en Total c/IVA (columna N)
+    '', '', '', '', '', // Fam a Prov (5-9)
+    '', '', '', '',    // Cód a Rub (10-13)
+    '', '',            // MP, Cuotas (14-15)
+    '',                // Cant (16)
+    '',                // P.Neto (17)
+    '',                // P.Unit (18)
+    { t: 'n', f: sumaFormula }, // Total c/IVA (19 - S)
+    '',                // Costo
+    ''                 // Rentab
   ];
 
   // ── Armar el worksheet ────────────────────────────────────────────────────
   const wsData = [HEADERS, ...dataRows, footerRow];
   const ws     = XLSX.utils.aoa_to_sheet(wsData);
 
-  // ── Ancho de columnas ────────────────────────────────────────────────────
+  // ── Ancho de columnas (21) ───────────────────────────────────────────────
   ws['!cols'] = [
-    { wch: 9 },  // Sucursal
-    { wch: 8 },  // Tipo Comp.
+    { wch: 8 },  // Sucursal
+    { wch: 6 },  // Tipo
     { wch: 18 }, // Comprobante
     { wch: 12 }, // Fecha
-    { wch: 12 }, // Cód. Art.
-    { wch: 40 }, // Descripción
-    { wch: 30 }, // Medio de Pago
-    { wch: 12 }, // Familia
-    { wch: 14 }, // Categoría
+    { wch: 15 }, // Familia
+    { wch: 15 }, // Categoría
+    { wch: 15 }, // Tipo Art.
+    { wch: 12 }, // Género
     { wch: 25 }, // Proveedor
+    { wch: 12 }, // Cód. Art.
+    { wch: 45 }, // Descripción
+    { wch: 30 }, // Cliente
+    { wch: 15 }, // Rubro
+    { wch: 25 }, // Medio de Pago
+    { wch: 8 },  // Cuotas
     { wch: 8 },  // Cantidad
     { wch: 14 }, // Precio Neto
     { wch: 14 }, // Precio Unit.
-    { wch: 16 }, // Total c/IVA  ← columna N
+    { wch: 16 }, // Total c/IVA (Col S)
+    { wch: 14 }, // Costo Unit.
+    { wch: 10 }, // Rentab.
   ];
 
   // ── Nombre de archivo con período activo ─────────────────────────────────

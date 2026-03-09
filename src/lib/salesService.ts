@@ -67,6 +67,7 @@ function mapVenta(row: any): VentaRow {
         monto_comprobante:    totalIVA,
         cod_cta:              '',
         desc_cuenta:          medioPago ?? '',
+        descripcion_adicional: row['DescripcionAdicional'] ?? null,
         cant_cuotas:          null,
         modalida_venta:       'Contado/Tarjeta',
         porcentaje_rentabilidad: rentabilidad,

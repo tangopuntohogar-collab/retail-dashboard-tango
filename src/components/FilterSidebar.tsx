@@ -12,6 +12,7 @@ interface FilterSidebarProps {
     onFiltersChange: (f: VentasFilters) => void;
     options: DetailFilterOptions;
     isLoadingOptions: boolean;
+    hideDateRange?: boolean;
 }
 
 /* ─── Skeleton ──────────────────────────────────────────────────────────── */
@@ -153,7 +154,7 @@ const DateInput: React.FC<{
 
 /* ─── FilterSidebar ──────────────────────────────────────────────────────── */
 export const FilterSidebar: React.FC<FilterSidebarProps> = ({
-    filters, onFiltersChange, options, isLoadingOptions,
+    filters, onFiltersChange, options, isLoadingOptions, hideDateRange = false,
 }) => {
     const [collapsed, setCollapsed] = useState(false);
 
@@ -282,33 +283,35 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
             <div className="shrink-0 border-b border-slate-800">
 
                 {/* Date Range Picker */}
-                <div className="px-4 py-3 border-b border-slate-800">
-                    <div className="flex items-center gap-2 mb-2.5">
-                        <CalendarDays size={13} className="text-slate-400" />
-                        <span className="text-xs font-medium text-slate-300">Rango de Fecha</span>
-                        {(filters.fechaDesde || filters.fechaHasta) && (
-                            <button
-                                onClick={() => onFiltersChange({ ...filters, fechaDesde: '', fechaHasta: '' })}
-                                className="ml-auto text-slate-500 hover:text-rose-400 transition-colors"
-                                title="Limpiar fechas"
-                            >
-                                <X size={12} />
-                            </button>
-                        )}
+                {!hideDateRange && (
+                    <div className="px-4 py-3 border-b border-slate-800">
+                        <div className="flex items-center gap-2 mb-2.5">
+                            <CalendarDays size={13} className="text-slate-400" />
+                            <span className="text-xs font-medium text-slate-300">Rango de Fecha</span>
+                            {(filters.fechaDesde || filters.fechaHasta) && (
+                                <button
+                                    onClick={() => onFiltersChange({ ...filters, fechaDesde: '', fechaHasta: '' })}
+                                    className="ml-auto text-slate-500 hover:text-rose-400 transition-colors"
+                                    title="Limpiar fechas"
+                                >
+                                    <X size={12} />
+                                </button>
+                            )}
+                        </div>
+                        <div className="flex flex-col gap-2">
+                            <DateInput
+                                label="Desde"
+                                value={filters.fechaDesde}
+                                onChange={v => onFiltersChange({ ...filters, fechaDesde: v })}
+                            />
+                            <DateInput
+                                label="Hasta"
+                                value={filters.fechaHasta}
+                                onChange={v => onFiltersChange({ ...filters, fechaHasta: v })}
+                            />
+                        </div>
                     </div>
-                    <div className="flex flex-col gap-2">
-                        <DateInput
-                            label="Desde"
-                            value={filters.fechaDesde}
-                            onChange={v => onFiltersChange({ ...filters, fechaDesde: v })}
-                        />
-                        <DateInput
-                            label="Hasta"
-                            value={filters.fechaHasta}
-                            onChange={v => onFiltersChange({ ...filters, fechaHasta: v })}
-                        />
-                    </div>
-                </div>
+                )}
 
                 {/* Búsqueda por artículo */}
                 <div className="px-4 py-3 border-b border-slate-800">

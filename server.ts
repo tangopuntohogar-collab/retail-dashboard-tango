@@ -85,7 +85,7 @@ function buildWhere(
 // ─── Columnas para el detalle ─────────────────────────────────────────────────
 const VENTAS_COLUMNS = `
     [Fecha], [Nro. Sucursal], [Tipo de comprobante], [Nro. Comprobante],
-    [Cód. vendedor], [Cód. Artículo], [Descripción],
+    [Cód. vendedor], [Cód. Artículo], [Descripción], CTA_ARTICULO.DESC_ADICIONAL_ARTICULO AS DescripcionAdicional,
     [Medio de Pago],[Precio Neto], [Precio Unitario], [Total cIVA],
     [Familia], [Categoria], [Cantidad], [PROVEEDOR (Adic.)], [PR.ÚLT.CPA C/IVA] AS CostoUnitario`;
 /* ── PENDIENTE: agregar [Precio Neto] cuando el ALTER VIEW sea ejecutado en SQL Server ── */
@@ -142,6 +142,7 @@ app.get('/api/ventas', async (req, res) => {
         const dataResult = await dataReq.query(`
             SELECT ${VENTAS_COLUMNS}
             FROM Dashboard_Ventas_Local
+            LEFT JOIN CTA_ARTICULO ON Dashboard_Ventas_Local.[Cód. Artículo] COLLATE DATABASE_DEFAULT = CTA_ARTICULO.COD_CTA_ARTICULO COLLATE DATABASE_DEFAULT
             ${whereData}
             ORDER BY Fecha DESC
             OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
@@ -163,39 +164,106 @@ app.get('/api/ventas', async (req, res) => {
 });
 
 /**
- * GET /api/ventas/exportar
- * Igual que /api/ventas pero SIN paginación — devuelve TODOS los registros filtrados.
- * Máximo 50.000 filas para proteger la memoria del servidor.
+ * GET /api/stock
+ * Obtiene saldos de stock por artículo, sucursal y depósito.
+ * Incluye campos adicionales de STA11 y costo PPP.
  */
-app.get('/api/ventas/exportar', async (req, res) => {
+app.get('/api/stock', async (req, res) => {
+    console.log('[RETAIL] /api/stock: Buscando saldos de inventario...');
     try {
         const q = req.query as Record<string, string | string[] | undefined>;
+        const pool = await sql.connect(config);
+        const request = pool.request();
+        
+        // Filtro por sucursal (opcional)
         const sucArray = Array.isArray(q.sucursal)
             ? (q.sucursal as string[])
             : q.sucursal ? [q.sucursal as string] : [];
+        
+        let whereSucursal = '';
+        if (sucArray.length > 0) {
+            const placeholders = sucArray.map((s, i) => {
+                request.input(`stock_sucursal${i}`, sql.NVarChar, String(s));
+                return `@stock_sucursal${i}`;
+            }).join(', ');
+            whereSucursal = `AND SUCURSAL.NRO_SUCURSAL IN (${placeholders})`;
+        }
 
-        const pool = await sql.connect(config);
-        const dataReq = pool.request();
-        const where = buildWhere(dataReq, {
-            desde: q.desde as string, hasta: q.hasta as string,
-            medioPago: q.medioPago as string,
-            familia: q.familia as string,
-            categoria: q.categoria as string,
-            proveedor: q.proveedor as string,
-            sucursales: sucArray,
-        });
+        const query = `
+            SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+            SET DATEFORMAT DMY;
+            SET DATEFIRST 7;
+            SET DEADLOCK_PRIORITY -8;
+            
+            SELECT
+                CTA_ARTICULO.COD_CTA_ARTICULO AS [cod_art],
+                CTA_ARTICULO.DESC_CTA_ARTICULO AS [descripcion],
+                CTA_ARTICULO.DESC_ADICIONAL_ARTICULO AS DescripcionAdicional,
+                SUCURSAL.NRO_SUCURSAL AS [nro_sucursal],
+                SUCURSAL.DESC_SUCURSAL AS [sucursal],
+                CTA_DEPOSITO.COD_CTA_DEPOSITO AS [cod_deposito],
+                CTA_DEPOSITO.DESC_CTA_DEPOSITO AS [deposito],
+                MEDIDA_STOCK.SIGLA_MEDIDA AS [um_stock],
+                SUM(CTA_SALDO_ARTICULO_DEPOSITO.CANTIDAD_STOCK) AS [saldo],
+                
+                -- Extracción de campos adicionales de STA11
+                (CASE WHEN CHARINDEX('<CA_FAMILIA>', CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX))) = 0 THEN '' ELSE (SUBSTRING( CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX)),CHARINDEX('<CA_FAMILIA>', CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX))) + LEN('<CA_FAMILIA>'),CHARINDEX('</CA_FAMILIA>', CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX))) - (CHARINDEX('<CA_FAMILIA>', CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX))) + LEN('<CA_FAMILIA>')))) END) AS [familia],
+                (CASE WHEN CHARINDEX('<CA_CATEGORIA>', CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX))) = 0 THEN '' ELSE (SUBSTRING( CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX)),CHARINDEX('<CA_CATEGORIA>', CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX))) + LEN('<CA_CATEGORIA>'),CHARINDEX('</CA_CATEGORIA>', CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX))) - (CHARINDEX('<CA_CATEGORIA>', CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX))) + LEN('<CA_CATEGORIA>')))) END) AS [categoria],
+                (CASE WHEN CHARINDEX('<CA_PROVEEDOR>', CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX))) = 0 THEN '' ELSE (SUBSTRING( CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX)),CHARINDEX('<CA_PROVEEDOR>', CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX))) + LEN('<CA_PROVEEDOR>'),CHARINDEX('</CA_PROVEEDOR>', CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX))) - (CHARINDEX('<CA_PROVEEDOR>', CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX))) + LEN('<CA_PROVEEDOR>')))) END) AS [proveedor],
+                (CASE WHEN CHARINDEX('<CA_TIPO>', CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX))) = 0 THEN '' ELSE (SUBSTRING( CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX)),CHARINDEX('<CA_TIPO>', CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX))) + LEN('<CA_TIPO>'),CHARINDEX('</CA_TIPO>', CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX))) - (CHARINDEX('<CA_TIPO>', CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX))) + LEN('<CA_TIPO>')))) END) AS [tipo_art],
+                (CASE WHEN CHARINDEX('<CA_GENERO>', CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX))) = 0 THEN '' ELSE (SUBSTRING( CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX)),CHARINDEX('<CA_GENERO>', CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX))) + LEN('<CA_GENERO>'),CHARINDEX('</CA_GENERO>', CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX))) - (CHARINDEX('<CA_GENERO>', CAST(STA11.CAMPOS_ADICIONALES as NVARCHAR(MAX))) + LEN('<CA_GENERO>')))) END) AS [genero],
+                
+                -- Costo Unitario valora compras + IVA DINÁMICO (MINI CASE)
+                MAX(ISNULL(STA12.PRECIO_U_L, 0) * (CASE WHEN STA11.COD_IVA = 3 THEN 1.105 ELSE 1.21 END)) AS CostoUnitario,
+                -- Fecha de Última Compra
+                MAX(STA12.FECHA_ULC) AS FechaUltimaCompra
 
-        const result = await dataReq.query(`
-            SELECT TOP 50000 ${VENTAS_COLUMNS}
-            FROM Dashboard_Ventas_Local
-            ${where}
-            ORDER BY Fecha DESC
-        `);
+            FROM
+                CTA_SALDO_ARTICULO_DEPOSITO 
+                RIGHT JOIN (
+                    SELECT ID_CTA_ARTICULO, ID_CTA_DEPOSITO, ID_SUCURSAL, MAX(FECHA) AS [FECHA_MAX] 
+                    FROM CTA_SALDO_ARTICULO_DEPOSITO 
+                    GROUP BY ID_CTA_ARTICULO, ID_CTA_DEPOSITO, ID_SUCURSAL
+                ) AS ULT_SALDO ON (
+                    CTA_SALDO_ARTICULO_DEPOSITO.ID_CTA_ARTICULO = ULT_SALDO.ID_CTA_ARTICULO 
+                    AND CTA_SALDO_ARTICULO_DEPOSITO.ID_CTA_DEPOSITO = ULT_SALDO.ID_CTA_DEPOSITO 
+                    AND CTA_SALDO_ARTICULO_DEPOSITO.ID_SUCURSAL = ULT_SALDO.ID_SUCURSAL 
+                    AND CTA_SALDO_ARTICULO_DEPOSITO.FECHA = ULT_SALDO.FECHA_MAX
+                )
+                LEFT JOIN CTA_ARTICULO ON (CTA_SALDO_ARTICULO_DEPOSITO.ID_CTA_ARTICULO = CTA_ARTICULO.ID_CTA_ARTICULO)
+                LEFT JOIN STA11 ON (CTA_ARTICULO.COD_CTA_ARTICULO COLLATE DATABASE_DEFAULT = STA11.COD_ARTICU COLLATE DATABASE_DEFAULT)
+                LEFT JOIN STA12 ON (STA11.COD_ARTICU COLLATE DATABASE_DEFAULT = STA12.COD_ARTICU COLLATE DATABASE_DEFAULT)
+                LEFT JOIN SUCURSAL ON (CTA_SALDO_ARTICULO_DEPOSITO.ID_SUCURSAL = SUCURSAL.ID_SUCURSAL)
+                LEFT JOIN CTA_DEPOSITO ON (CTA_SALDO_ARTICULO_DEPOSITO.ID_CTA_DEPOSITO = CTA_DEPOSITO.ID_CTA_DEPOSITO)
+                LEFT JOIN CTA_ARTICULO_SUCURSAL ON (
+                    CTA_SALDO_ARTICULO_DEPOSITO.ID_CTA_ARTICULO = CTA_ARTICULO_SUCURSAL.ID_CTA_ARTICULO 
+                    AND CTA_SALDO_ARTICULO_DEPOSITO.ID_SUCURSAL = CTA_ARTICULO_SUCURSAL.ID_SUCURSAL
+                )
+                LEFT JOIN CTA_MEDIDA AS MEDIDA_STOCK ON (CTA_ARTICULO_SUCURSAL.ID_CTA_MEDIDA_STOCK = MEDIDA_STOCK.ID_CTA_MEDIDA)
+            WHERE 
+                CTA_ARTICULO.STOCK = 1 
+                ${whereSucursal}
+            GROUP BY
+                CTA_ARTICULO.COD_CTA_ARTICULO, 
+                CTA_ARTICULO.DESC_CTA_ARTICULO, 
+                CTA_ARTICULO.DESC_ADICIONAL_ARTICULO,
+                SUCURSAL.NRO_SUCURSAL, 
+                SUCURSAL.DESC_SUCURSAL, 
+                CTA_DEPOSITO.COD_CTA_DEPOSITO, 
+                CTA_DEPOSITO.DESC_CTA_DEPOSITO, 
+                MEDIDA_STOCK.SIGLA_MEDIDA,
+                CAST(STA11.CAMPOS_ADICIONALES AS NVARCHAR(MAX))
+            HAVING 
+                SUM(CTA_SALDO_ARTICULO_DEPOSITO.CANTIDAD_STOCK) > 0
+            ORDER BY 
+                CTA_ARTICULO.COD_CTA_ARTICULO ASC
+        `;
 
-        console.log(`[RETAIL] /api/ventas/exportar → ${result.recordset.length} filas (sin paginación)`);
-        res.json({ data: result.recordset, total: result.recordset.length });
+        const result = await request.query(query);
+        console.log(`[RETAIL] /api/stock → ${result.recordset.length} filas`);
+        res.json({ data: result.recordset });
     } catch (err) {
-        console.error('[RETAIL] Error SQL /api/ventas/exportar:', err);
+        console.error('[RETAIL] Error SQL /api/stock:', err);
         res.status(500).json({ error: String(err) });
     }
 });

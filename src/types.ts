@@ -8,6 +8,7 @@ export interface VentaRow {
   cod_vendedor: string;             // Cód. vendedor
   cod_articu: string;               // Cód. Artículo
   descripcio: string;               // Descripción
+  descripcion_adicional?: string;
   medioPago: string | null;         // Medio de Pago  ← NUEVO
   precioNeto: number | null;        // Precio Neto    ← NUEVO
   precioUnitario: number | null;    // Precio Unitario ← NUEVO
@@ -44,6 +45,26 @@ export interface VentaRow {
   tipo?: string | null;
   genero?: string | null;
   proveedor?: string | null;
+}
+
+/** Fila para la vista de Análisis de Stock */
+export interface StockRow {
+  sucursal: string;
+  nro_sucursal: string;
+  cod_art: string;
+  descripcion: string;
+  descripcion_adicional?: string;
+  deposito: string;
+  cod_deposito: string;
+  um_stock: string;
+  saldo: number;
+  familia: string;
+  categoria: string;
+  tipo_art: string;
+  genero: string;
+  proveedor: string;
+  costo_unit: number;
+  fecha_ult_compra?: string;
 }
 
 /** Filtros unificados para todas las vistas (Dashboard y Detalle) */

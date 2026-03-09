@@ -202,14 +202,16 @@ export const SalesTable: React.FC<SalesTableProps> = ({ data, isLoading, totalIm
 
                 {/* Descripción + Info Adicional (desc_adic) combinadas */}
                 <td className="px-4 py-3">
-                  <span className="block text-slate-200 font-medium text-sm leading-snug">
-                    {item.descripcio ?? '-'}
-                  </span>
-                  {item.desc_adic && (
-                    <span className="block text-xs text-slate-500 mt-0.5 leading-snug">
-                      {item.desc_adic}
+                  <div className="flex flex-col">
+                    <span className="text-slate-200 font-medium text-sm leading-snug">
+                      {item.descripcio ?? '-'}
                     </span>
-                  )}
+                    {item.descripcion_adicional && (
+                      <span className="text-xs text-slate-500 italic mt-0.5 leading-snug">
+                        {item.descripcion_adicional}
+                      </span>
+                    )}
+                  </div>
                 </td>
 
                 {/* Cliente: razon_social + cod_client combinados */}
