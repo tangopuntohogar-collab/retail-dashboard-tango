@@ -5,11 +5,12 @@ import { Loader2, Info } from 'lucide-react';
 interface StockTableProps {
   data: StockMatrixRow[];
   isLoading: boolean;
-  periodoAnalisis: '12m' | '6m' | '3m' | '1m' | '30d';
+  fechaDesde: string;
+  fechaHasta: string;
   statsSucursal: string; // La sucursal de la cual mostrar estadísticas (ej. '1008' o '1001')
 }
 
-export const StockTable: React.FC<StockTableProps> = ({ data, isLoading, periodoAnalisis, statsSucursal }) => {
+export const StockTable: React.FC<StockTableProps> = ({ data, isLoading, fechaDesde, fechaHasta, statsSucursal }) => {
 
   const formatCurrency = (val: number | null) =>
     new Intl.NumberFormat('es-AR', {
@@ -18,25 +19,8 @@ export const StockTable: React.FC<StockTableProps> = ({ data, isLoading, periodo
       minimumFractionDigits: 2,
     }).format(val ?? 0);
 
-  // Mapeo de periodo a texto descriptivo para el tooltip
-  const periodLabels: { [key: string]: string } = {
-    '12m': 'últimos 12 meses',
-    '6m': 'últimos 6 meses',
-    '3m': 'últimos 3 meses',
-    '1m': 'último mes',
-    '30d': 'últimos 30 días'
-  };
-
-  // Mapeo de periodo a key del objeto StockStat
-  const periodToKey: { [key: string]: keyof import('../types').StockStat } = {
-    '12m': 'prom12m',
-    '6m': 'prom6m',
-    '3m': 'prom3m',
-    '1m': 'prom1m',
-    '30d': 'venta30d'
-  };
-
-  const statKey = periodToKey[periodoAnalisis];
+  // Calcular días en el rango (inclusive)
+  const daysInRange = Math.max(1, Math.round((new Date(fechaHasta).getTime() - new Date(fechaDesde).getTime()) / (1000 * 60 * 60 * 24)) + 1);
 
   // Obtener lista única de sucursales presentes en los datos
   const allSucursales = Array.from(
@@ -82,9 +66,12 @@ export const StockTable: React.FC<StockTableProps> = ({ data, isLoading, periodo
                 TOTAL GRAL.
               </th>
 
-              {/* Columna de Venta Promedio */}
+              {/* Columna de Ventas del Período */}
               <th className="px-4 py-3.5 text-right text-[10px] font-bold text-orange-400 uppercase tracking-wider border-l border-orange-500/30 bg-orange-500/5 whitespace-nowrap">
-                VENTA PROM.
+                <span className="block">VENTAS DEL PERÍODO</span>
+                <span className="block text-[10px] font-normal text-slate-500 mt-0.5 lowercase tracking-normal">
+                  ({daysInRange} {daysInRange === 1 ? 'día' : 'días'})
+                </span>
               </th>
 
               {/* Columna de Cobertura */}
@@ -94,7 +81,7 @@ export const StockTable: React.FC<StockTableProps> = ({ data, isLoading, periodo
                   <div className="relative cursor-help">
                     <Info size={12} className="text-slate-500 group-hover/header:text-slate-300 transition-colors" />
                     <div className="absolute bottom-full right-0 mb-2 w-48 p-2 bg-slate-900 border border-slate-700 rounded shadow-xl text-[10px] normal-case font-normal text-slate-300 opacity-0 group-hover/header:opacity-100 pointer-events-none transition-opacity z-50">
-                      Días estimados de stock basados en el promedio de los {periodLabels[periodoAnalisis]}.
+                      Días estimados de stock basados en las ventas del rango seleccionado ({daysInRange} días).
                     </div>
                   </div>
                 </div>
@@ -110,10 +97,10 @@ export const StockTable: React.FC<StockTableProps> = ({ data, isLoading, periodo
               </tr>
             ) : (
               data.map((item) => {
-                const statValue = item.stats[statsSucursal]?.[statKey] ?? 
-                                 item.stats['1001']?.[statKey] ?? 0;
+                const totalVendido = item.stats[statsSucursal]?.totalVendido ?? 
+                                   item.stats['1001']?.totalVendido ?? 0;
 
-                const ventaDiaria = statValue / 30;
+                const ventaDiaria = totalVendido / daysInRange;
                 let diasCobertura: number | null = null;
                 let coverageStatus: 'low' | 'high' | 'normal' | 'none' = 'normal';
 
@@ -171,9 +158,9 @@ export const StockTable: React.FC<StockTableProps> = ({ data, isLoading, periodo
                       {item.stock_total.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
                     </td>
 
-                    {/* Columna Venta Promedio */}
+                    {/* Columna Ventas del Período */}
                     <td className="px-4 py-3 text-right text-orange-400 font-bold border-l border-orange-500/20 bg-orange-500/5 whitespace-nowrap tabular-nums">
-                      {statValue.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {totalVendido.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
                     </td>
 
                     {/* Columna Cobertura (Semáforo) */}

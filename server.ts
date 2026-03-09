@@ -174,6 +174,17 @@ app.get('/api/stock', async (req, res) => {
         const q = req.query as Record<string, string | string[] | undefined>;
         const pool = await sql.connect(config);
         const request = pool.request();
+
+        // ── Rango de fechas para ventas dinámicas ───────────────────────────
+        const today = new Date();
+        const thirtyDaysAgo = new Date(today);
+        thirtyDaysAgo.setDate(today.getDate() - 30);
+
+        const fechaDesde = q.fechaDesde as string || thirtyDaysAgo.toISOString().split('T')[0];
+        const fechaHasta = q.fechaHasta as string || today.toISOString().split('T')[0];
+
+        request.input('fechaDesde', sql.Date, fechaDesde);
+        request.input('fechaHasta', sql.Date, fechaHasta);
         
         // Filtro por sucursal (opcional)
         const sucArray = Array.isArray(q.sucursal)
@@ -218,19 +229,9 @@ app.get('/api/stock', async (req, res) => {
                 -- Fecha de Última Compra
                 MAX(STA12.FECHA_ULC) AS FechaUltimaCompra,
 
-                -- Estadísticas de Venta (Local)
-                MAX(STATS_LOCAL.PROM_12M) AS prom12m,
-                MAX(STATS_LOCAL.PROM_6M) AS prom6m,
-                MAX(STATS_LOCAL.PROM_3M) AS prom3m,
-                MAX(STATS_LOCAL.PROM_1M) AS prom1m,
-                MAX(STATS_LOCAL.VENTA_30D) AS venta30d,
-                
-                -- Estadísticas de Venta (General 1001)
-                MAX(STATS_GRAL.PROM_12M) AS prom12m_gral,
-                MAX(STATS_GRAL.PROM_6M) AS prom6m_gral,
-                MAX(STATS_GRAL.PROM_3M) AS prom3m_gral,
-                MAX(STATS_GRAL.PROM_1M) AS prom1m_gral,
-                MAX(STATS_GRAL.VENTA_30D) AS venta30d_gral
+                -- Ventas Dinámicas del Período
+                MAX(ISNULL(STATS_LOCAL.TotalVendido, 0)) AS totalVendido,
+                MAX(ISNULL(STATS_GRAL.TotalVendido, 0)) AS totalVendidoGral
 
             FROM
                 CTA_SALDO_ARTICULO_DEPOSITO 
@@ -254,13 +255,22 @@ app.get('/api/stock', async (req, res) => {
                     AND CTA_SALDO_ARTICULO_DEPOSITO.ID_SUCURSAL = CTA_ARTICULO_SUCURSAL.ID_SUCURSAL
                 )
                 LEFT JOIN CTA_MEDIDA AS MEDIDA_STOCK ON (CTA_ARTICULO_SUCURSAL.ID_CTA_MEDIDA_STOCK = MEDIDA_STOCK.ID_CTA_MEDIDA)
-                LEFT JOIN RETAIL_ESTADISTICAS_VENTA AS STATS_LOCAL ON (
+                LEFT JOIN (
+                    SELECT COD_ARTICU, NRO_SUCURS, SUM(CANTIDAD) as TotalVendido
+                    FROM CTA03
+                    WHERE FECHA_MOV BETWEEN @fechaDesde AND @fechaHasta
+                    GROUP BY COD_ARTICU, NRO_SUCURS
+                ) AS STATS_LOCAL ON (
                     STA11.COD_ARTICU COLLATE DATABASE_DEFAULT = STATS_LOCAL.COD_ARTICU COLLATE DATABASE_DEFAULT
-                    AND SUCURSAL.NRO_SUCURSAL = STATS_LOCAL.SUCURSAL
+                    AND SUCURSAL.NRO_SUCURSAL = STATS_LOCAL.NRO_SUCURS
                 )
-                LEFT JOIN RETAIL_ESTADISTICAS_VENTA AS STATS_GRAL ON (
+                LEFT JOIN (
+                    SELECT COD_ARTICU, SUM(CANTIDAD) as TotalVendido
+                    FROM CTA03
+                    WHERE FECHA_MOV BETWEEN @fechaDesde AND @fechaHasta
+                    GROUP BY COD_ARTICU
+                ) AS STATS_GRAL ON (
                     STA11.COD_ARTICU COLLATE DATABASE_DEFAULT = STATS_GRAL.COD_ARTICU COLLATE DATABASE_DEFAULT
-                    AND STATS_GRAL.SUCURSAL = 1001
                 )
             WHERE 
                 CTA_ARTICULO.STOCK = 1 

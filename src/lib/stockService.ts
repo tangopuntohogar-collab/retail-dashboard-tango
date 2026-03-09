@@ -1,4 +1,4 @@
-import { StockRow, StockMatrixRow } from '../types';
+import { StockFilters, StockMatrixRow } from '../types';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3002/api/ventas';
 const BASE_URL = API_URL.replace('/api/ventas', '');
@@ -6,9 +6,11 @@ const BASE_URL = API_URL.replace('/api/ventas', '');
 /**
  * Trae saldos de stock desde /api/stock y los transforma en matriz (Artículo x Sucursales).
  */
-export async function fetchStock(sucursales?: string[]): Promise<StockMatrixRow[]> {
+export async function fetchStock(filters: StockFilters): Promise<StockMatrixRow[]> {
   const params = new URLSearchParams();
-  sucursales?.forEach(s => params.append('sucursal', String(s)));
+  filters.sucursales?.forEach(s => params.append('sucursal', String(s)));
+  if (filters.fechaDesde) params.append('fechaDesde', filters.fechaDesde);
+  if (filters.fechaHasta) params.append('fechaHasta', filters.fechaHasta);
 
   try {
     const url = `${BASE_URL}/api/stock?${params}`;
@@ -48,25 +50,17 @@ export async function fetchStock(sucursales?: string[]): Promise<StockMatrixRow[
       acc[artCode].sucursales[nroSuc] = (acc[artCode].sucursales[nroSuc] || 0) + saldo;
       acc[artCode].stock_total += saldo;
 
-      // Asignar estadísticas de la sucursal local
-      if (row.prom3m !== undefined) {
+      // Asignar estadísticas de la sucursal local (Dynamic totalVendido)
+      if (row.totalVendido !== undefined) {
         acc[artCode].stats[nroSuc] = {
-          prom12m: Number(row.prom12m) || 0,
-          prom6m: Number(row.prom6m) || 0,
-          prom3m: Number(row.prom3m) || 0,
-          prom1m: Number(row.prom1m) || 0,
-          venta30d: Number(row.venta30d) || 0,
+          totalVendido: Number(row.totalVendido) || 0,
         };
       }
 
       // Asignar estadísticas generales (Sucursal 1001) si no existen aún
-      if (!acc[artCode].stats['1001'] && row.prom3m_gral !== undefined) {
+      if (!acc[artCode].stats['1001'] && row.totalVendidoGral !== undefined) {
         acc[artCode].stats['1001'] = {
-          prom12m: Number(row.prom12m_gral) || 0,
-          prom6m: Number(row.prom6m_gral) || 0,
-          prom3m: Number(row.prom3m_gral) || 0,
-          prom1m: Number(row.prom1m_gral) || 0,
-          venta30d: Number(row.venta30d_gral) || 0,
+          totalVendido: Number(row.totalVendidoGral) || 0,
         };
       }
 

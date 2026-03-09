@@ -83,14 +83,15 @@ export const StockView: React.FC = () => {
         onFiltersChange={setFilters}
         options={stockOptions}
         isLoadingOptions={isLoading}
-        hideDateRange={true}
+        hideDateRange={false}
         view="stock"
       />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <StockTable 
           data={filteredData} 
           isLoading={isLoading} 
-          periodoAnalisis={filters.periodoAnalisis}
+          fechaDesde={filters.fechaDesde}
+          fechaHasta={filters.fechaHasta}
           statsSucursal={filters.sucursales.length === 1 ? filters.sucursales[0] : '1001'}
         />
       </div>

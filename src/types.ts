@@ -48,11 +48,7 @@ export interface VentaRow {
 }
 
 export interface StockStat {
-  prom12m: number;
-  prom6m: number;
-  prom3m: number;
-  prom1m: number;
-  venta30d: number;
+  totalVendido: number;
 }
 
 /** Fila para la vista de Análisis de Stock */
@@ -73,13 +69,9 @@ export interface StockRow {
   proveedor: string;
   costo_unit: number;
   fecha_ult_compra?: string;
-  // Estadísticas (Raw from SQL)
-  prom12m?: number;
-  prom6m?: number;
-  prom3m?: number;
-  prom1m?: number;
-  venta30d?: number;
-  sucursalStat?: number;
+  // Estadísticas (Dynamic from SQL)
+  totalVendido?: number;
+  totalVendidoGral?: number;
 }
 
 export interface StockMatrixRow {
@@ -120,6 +112,8 @@ export interface VentasFilters {
 }
 
 export interface StockFilters {
+  fechaDesde: string;
+  fechaHasta: string;
   sucursales: string[];
   search: string;
   familias: string[];
@@ -127,19 +121,31 @@ export interface StockFilters {
   tipos: string[];
   generos: string[];
   proveedores: string[];
-  periodoAnalisis: '12m' | '6m' | '3m' | '1m' | '30d';
 }
 
-export const getInitialStockFilters = (): StockFilters => ({
-  sucursales: [],
-  search: '',
-  familias: [],
-  categorias: [],
-  tipos: [],
-  generos: [],
-  proveedores: [],
-  periodoAnalisis: '3m',
-});
+export const getInitialStockFilters = (): StockFilters => {
+  const today = new Date();
+  const thirtyDaysAgo = new Date(today);
+  thirtyDaysAgo.setDate(today.getDate() - 30);
+  
+  const toISO = (d: Date) => {
+    const offset = d.getTimezoneOffset();
+    const localDate = new Date(d.getTime() - (offset * 60 * 1000));
+    return localDate.toISOString().substring(0, 10);
+  };
+
+  return {
+    fechaDesde: toISO(thirtyDaysAgo),
+    fechaHasta: toISO(today),
+    sucursales: [],
+    search: '',
+    familias: [],
+    categorias: [],
+    tipos: [],
+    generos: [],
+    proveedores: [],
+  };
+};
 
 /** Helper para obtener los filtros iniciales (mes en curso) */
 export const getInitialFilters = (): VentasFilters => {

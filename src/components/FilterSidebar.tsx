@@ -218,11 +218,9 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
 
     // Las fechas siempre están seteadas (getInitialFilters las inicializa), por eso
     // solo contamos el rango de fechas cuando fue modificado respecto al default.
-    const { fechaDesde: defaultDesde, fechaHasta: defaultHasta } = getInitialFilters();
+    const { fechaDesde: defaultDesde, fechaHasta: defaultHasta } = isStock ? getInitialStockFilters() : getInitialFilters();
     
-    const datesModified = !isStock && (
-        asVentas.fechaDesde !== defaultDesde || asVentas.fechaHasta !== defaultHasta
-    );
+    const datesModified = filters.fechaDesde !== defaultDesde || filters.fechaHasta !== defaultHasta;
 
     const activeCount =
         filters.sucursales.length + 
@@ -232,14 +230,14 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
         filters.generos.length +
         filters.proveedores.length +
         (filters.search ? 1 : 0) +
+        (datesModified ? 1 : 0) +
         (!isStock ? (
             asVentas.rubros.length + 
             asVentas.mediosPago.length + 
             asVentas.cuentas.length + 
             asVentas.clientes.length + 
             asVentas.cuotas.length + 
-            (asVentas.comprobante ? 1 : 0) + 
-            (datesModified ? 1 : 0)
+            (asVentas.comprobante ? 1 : 0)
         ) : 0);
 
     const handleClear = () => {
@@ -375,31 +373,7 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
                     </div>
                 )}
 
-                {/* Período de Análisis (Solo para Stock) */}
-                {hideDateRange && (
-                    <div className="px-4 py-3 border-b border-slate-800">
-                        <div className="flex flex-col gap-1.5">
-                            <span className="text-[10px] text-slate-500 uppercase tracking-wide font-medium flex items-center gap-2">
-                                <CalendarDays size={12} className="text-slate-400" />
-                                Período de Análisis
-                            </span>
-                            <div className="relative">
-                                <select
-                                    value={filters.periodoAnalisis}
-                                    onChange={e => onFiltersChange({ ...filters, periodoAnalisis: e.target.value as any })}
-                                    className="w-full bg-slate-800/70 border border-slate-700 text-slate-200 rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors appearance-none cursor-pointer pr-8"
-                                >
-                                    <option value="12m">Últimos 12 Meses</option>
-                                    <option value="6m">Últimos 6 Meses</option>
-                                    <option value="3m">Últimos 3 Meses</option>
-                                    <option value="1m">Último Mes</option>
-                                    <option value="30d">Últimos 30 Días</option>
-                                </select>
-                                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-                            </div>
-                        </div>
-                    </div>
-                )}
+                {/* El bloque de Período de Análisis ha sido eliminado ya que ahora es dinámico */}
             </div>
 
             {/* Acordeones con scroll */}
