@@ -337,10 +337,7 @@ export default function App() {
                 transition={{ duration: 0.2 }}
                 className="h-full flex-1 min-h-0"
               >
-                <StockView 
-                  options={detailOptionsEfectivas} 
-                  isLoadingOptions={isLoadingDetailOptions} 
-                />
+                <StockView />
               </motion.div>
             )}
 

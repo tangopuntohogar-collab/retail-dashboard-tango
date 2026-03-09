@@ -1,61 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { StockRow, VentasFilters, DetailFilterOptions } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { StockMatrixRow, StockFilters, DetailFilterOptions, getInitialStockFilters } from '../types';
 import { fetchStock } from '../lib/stockService';
 import { StockTable } from './StockTable';
 import { FilterSidebar } from './FilterSidebar';
 
-interface StockViewProps {
-  options: DetailFilterOptions;
-  isLoadingOptions: boolean;
-}
-
-export const StockView: React.FC<StockViewProps> = ({ options, isLoadingOptions }) => {
-  const [data, setData] = useState<StockRow[]>([]);
+export const StockView: React.FC = () => {
+  const [rawData, setRawData] = useState<StockMatrixRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [filters, setFilters] = useState<VentasFilters>({
-    fechaDesde: '',
-    fechaHasta: '',
-    sucursales: [],
-    rubros: [],
-    modalidades: [],
-    mediosPago: [],
-    search: '',
-    cuentas: [],
-    clientes: [],
-    cuotas: [],
-    comprobante: '',
-    familias: [],
-    categorias: [],
-    tipos: [],
-    generos: [],
-    proveedores: [],
-  });
+  const [filters, setFilters] = useState<StockFilters>(getInitialStockFilters());
 
   const loadStock = async () => {
-    console.log('[StockView] loadStock: Initing load...');
     setIsLoading(true);
     try {
-      console.log('[StockView] loadStock: Calling fetchStock with sucursales:', filters.sucursales);
       const stock = await fetchStock(filters.sucursales);
-      console.log('[StockView] loadStock: Received', stock.length, 'rows');
-      
-      // Filtros locales para los campos adicionales
-      const filtered = stock.filter(item => {
-        if (filters.familias.length && !filters.familias.includes(item.familia)) return false;
-        if (filters.categorias.length && !filters.categorias.includes(item.categoria)) return false;
-        if (filters.tipos.length && !filters.tipos.includes(item.tipo_art)) return false;
-        if (filters.generos.length && !filters.generos.includes(item.genero)) return false;
-        if (filters.proveedores.length && !filters.proveedores.includes(item.proveedor)) return false;
-        
-        if (filters.search) {
-          const s = filters.search.toLowerCase();
-          return item.descripcion.toLowerCase().includes(s) || item.cod_art.toLowerCase().includes(s);
-        }
-        
-        return true;
-      });
-      
-      setData(filtered);
+      setRawData(stock);
     } catch (e) {
       console.error('Error loading stock:', e);
     } finally {
@@ -65,22 +23,75 @@ export const StockView: React.FC<StockViewProps> = ({ options, isLoadingOptions 
 
   useEffect(() => {
     loadStock();
-  }, [filters.sucursales, filters.familias, filters.categorias, filters.tipos, filters.generos, filters.proveedores, filters.search]);
+  }, [filters.sucursales]);
+
+  // ── Extraer opciones únicas del inventario cargado ──────────────────────────
+  const stockOptions = useMemo((): DetailFilterOptions => {
+    const families = new Set<string>();
+    const categories = new Set<string>();
+    const types = new Set<string>();
+    const genders = new Set<string>();
+    const providers = new Set<string>();
+    const stores = new Set<string>();
+
+    rawData.forEach(item => {
+      if (item.familia) families.add(item.familia);
+      if (item.categoria) categories.add(item.categoria);
+      if (item.tipo_art) types.add(item.tipo_art);
+      if (item.genero) genders.add(item.genero);
+      if (item.proveedor) providers.add(item.proveedor);
+      Object.keys(item.sucursales).forEach(s => stores.add(s));
+    });
+
+    return {
+      sucursales: Array.from(stores).sort(),
+      rubros: [],
+      mediosPago: [],
+      cuentas: [],
+      clientes: [],
+      cuotas: [],
+      familias: Array.from(families).sort(),
+      categorias: Array.from(categories).sort(),
+      tipos: Array.from(types).sort(),
+      generos: Array.from(genders).sort(),
+      proveedores: Array.from(providers).sort(),
+    };
+  }, [rawData]);
+
+  // ── Aplicar filtros locales ────────────────────────────────────────────────
+  const filteredData = useMemo(() => {
+    return rawData.filter(item => {
+      if (filters.familias.length && !filters.familias.includes(item.familia)) return false;
+      if (filters.categorias.length && !filters.categorias.includes(item.categoria)) return false;
+      if (filters.tipos.length && !filters.tipos.includes(item.tipo_art)) return false;
+      if (filters.generos.length && !filters.generos.includes(item.genero)) return false;
+      if (filters.proveedores.length && !filters.proveedores.includes(item.proveedor)) return false;
+      
+      if (filters.search) {
+        const s = filters.search.toLowerCase();
+        return item.descripcion.toLowerCase().includes(s) || item.cod_art.toLowerCase().includes(s);
+      }
+      
+      return true;
+    });
+  }, [rawData, filters]);
 
   return (
     <div className="h-full flex overflow-hidden">
       <FilterSidebar
-        filters={filters}
+        filters={filters as any}
         onFiltersChange={setFilters}
-        options={options}
-        isLoadingOptions={isLoadingOptions}
-        hideDateRange={true} // El stock es saldo actual, no por rango de fechas
+        options={stockOptions}
+        isLoadingOptions={isLoading}
+        hideDateRange={true}
+        view="stock"
       />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <StockTable 
-          data={data} 
+          data={filteredData} 
           isLoading={isLoading} 
-          selectedSucursal={filters.sucursales.length === 1 ? filters.sucursales[0] : null}
+          periodoAnalisis={filters.periodoAnalisis}
+          statsSucursal={filters.sucursales.length === 1 ? filters.sucursales[0] : '1001'}
         />
       </div>
     </div>

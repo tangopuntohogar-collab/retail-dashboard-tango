@@ -47,15 +47,23 @@ export interface VentaRow {
   proveedor?: string | null;
 }
 
+export interface StockStat {
+  prom12m: number;
+  prom6m: number;
+  prom3m: number;
+  prom1m: number;
+  venta30d: number;
+}
+
 /** Fila para la vista de Análisis de Stock */
 export interface StockRow {
-  sucursal: string;
-  nro_sucursal: string;
   cod_art: string;
   descripcion: string;
   descripcion_adicional?: string;
-  deposito: string;
+  nro_sucursal: number;
+  sucursal: string;
   cod_deposito: string;
+  deposito: string;
   um_stock: string;
   saldo: number;
   familia: string;
@@ -65,6 +73,29 @@ export interface StockRow {
   proveedor: string;
   costo_unit: number;
   fecha_ult_compra?: string;
+  // Estadísticas (Raw from SQL)
+  prom12m?: number;
+  prom6m?: number;
+  prom3m?: number;
+  prom1m?: number;
+  venta30d?: number;
+  sucursalStat?: number;
+}
+
+export interface StockMatrixRow {
+  cod_art: string;
+  descripcion: string;
+  descripcion_adicional?: string;
+  familia: string;
+  categoria: string;
+  tipo_art: string;
+  genero: string;
+  proveedor: string;
+  costo_unit: number;
+  fecha_ult_compra?: string;
+  sucursales: { [nro_sucursal: string]: number };
+  stock_total: number;
+  stats: { [nro_sucursal: string]: StockStat };
 }
 
 /** Filtros unificados para todas las vistas (Dashboard y Detalle) */
@@ -85,7 +116,30 @@ export interface VentasFilters {
   tipos: string[];
   generos: string[];
   proveedores: string[];
+  periodoAnalisis: '12m' | '6m' | '3m' | '1m' | '30d';
 }
+
+export interface StockFilters {
+  sucursales: string[];
+  search: string;
+  familias: string[];
+  categorias: string[];
+  tipos: string[];
+  generos: string[];
+  proveedores: string[];
+  periodoAnalisis: '12m' | '6m' | '3m' | '1m' | '30d';
+}
+
+export const getInitialStockFilters = (): StockFilters => ({
+  sucursales: [],
+  search: '',
+  familias: [],
+  categorias: [],
+  tipos: [],
+  generos: [],
+  proveedores: [],
+  periodoAnalisis: '3m',
+});
 
 /** Helper para obtener los filtros iniciales (mes en curso) */
 export const getInitialFilters = (): VentasFilters => {
@@ -115,6 +169,7 @@ export const getInitialFilters = (): VentasFilters => {
     tipos: [],
     generos: [],
     proveedores: [],
+    periodoAnalisis: '3m',
   };
 };
 

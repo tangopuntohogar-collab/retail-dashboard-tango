@@ -5,7 +5,7 @@ import {
     FileSearch, CalendarDays, Hash, Layers, Box, FileText,
     VenetianMask, Truck,
 } from 'lucide-react';
-import { VentasFilters, DetailFilterOptions, getInitialFilters } from '../types';
+import { VentasFilters, StockFilters, DetailFilterOptions, getInitialFilters, getInitialStockFilters } from '../types';
 
 interface FilterSidebarProps {
     filters: VentasFilters;
@@ -154,8 +154,14 @@ const DateInput: React.FC<{
 
 /* ─── FilterSidebar ──────────────────────────────────────────────────────── */
 export const FilterSidebar: React.FC<FilterSidebarProps> = ({
-    filters, onFiltersChange, options, isLoadingOptions, hideDateRange = false,
+    filters, onFiltersChange, options, isLoadingOptions, hideDateRange = false, view = 'sales'
 }) => {
+    const isStock = view === 'stock';
+
+    // Helper para type guard y casting seguro
+    const asVentas = filters as VentasFilters;
+    // const asStock = filters as StockFilters;
+
     const [collapsed, setCollapsed] = useState(false);
 
     // ── Debounced: búsqueda de artículo ──────────────────────────────────────
@@ -171,7 +177,7 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
     }, [filters, onFiltersChange]);
 
     // ── Debounced: búsqueda de comprobante ───────────────────────────────────
-    const [comprobanteInput, setComprobanteInput] = useState(filters.comprobante);
+    const [comprobanteInput, setComprobanteInput] = useState(!isStock ? asVentas.comprobante : '');
     const comprobanteDebRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const handleComprobanteChange = useCallback((val: string) => {
@@ -180,56 +186,66 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
         comprobanteDebRef.current = setTimeout(() => {
             onFiltersChange({ ...filters, comprobante: val });
         }, 420);
-    }, [filters, onFiltersChange]);
+    }, [filters, onFiltersChange, isStock]);
 
     // ── Sync inputs on external reset ────────────────────────────────────────
     useEffect(() => {
         if (filters.search === '' && searchInput !== '') setSearchInput('');
-        if (filters.comprobante === '' && comprobanteInput !== '') setComprobanteInput('');
-    }, [filters.search, filters.comprobante]);
+        if (!isStock && asVentas.comprobante === '' && comprobanteInput !== '') setComprobanteInput('');
+    }, [filters.search, !isStock ? asVentas.comprobante : '', isStock]);
 
-    const toggle = (key: keyof Pick<VentasFilters, 'sucursales' | 'rubros' | 'cuentas' | 'clientes' | 'familias' | 'categorias' | 'tipos' | 'generos' | 'proveedores'>, val: string) => {
-        const current = (filters[key] as string[]) || [];
+    const toggle = (key: string, val: string) => {
+        const current = (filters[key as keyof typeof filters] as string[]) || [];
         const next = current.includes(val) ? current.filter(v => v !== val) : [...current, val];
         onFiltersChange({ ...filters, [key]: next });
     };
 
     const toggleMedioPago = (val: string) => {
-        const next = filters.mediosPago.includes(val)
-            ? filters.mediosPago.filter(v => v !== val)
-            : [...filters.mediosPago, val];
+        if (isStock) return;
+        const next = asVentas.mediosPago.includes(val)
+            ? asVentas.mediosPago.filter(v => v !== val)
+            : [...asVentas.mediosPago, val];
         onFiltersChange({ ...filters, mediosPago: next });
     };
 
     const toggleCuota = (val: number) => {
-        const next = filters.cuotas.includes(val)
-            ? filters.cuotas.filter(v => v !== val)
-            : [...filters.cuotas, val];
+        if (isStock) return;
+        const next = asVentas.cuotas.includes(val)
+            ? asVentas.cuotas.filter(v => v !== val)
+            : [...asVentas.cuotas, val];
         onFiltersChange({ ...filters, cuotas: next });
     };
 
     // Las fechas siempre están seteadas (getInitialFilters las inicializa), por eso
     // solo contamos el rango de fechas cuando fue modificado respecto al default.
     const { fechaDesde: defaultDesde, fechaHasta: defaultHasta } = getInitialFilters();
-    const datesModified =
-        filters.fechaDesde !== defaultDesde || filters.fechaHasta !== defaultHasta;
+    
+    const datesModified = !isStock && (
+        asVentas.fechaDesde !== defaultDesde || asVentas.fechaHasta !== defaultHasta
+    );
 
     const activeCount =
-        filters.sucursales.length + filters.rubros.length +
-        filters.mediosPago.length +
-        filters.cuentas.length + filters.clientes.length +
-        filters.cuotas.length +
-        filters.familias.length + filters.categorias.length +
-        filters.tipos.length + filters.generos.length +
+        filters.sucursales.length + 
+        filters.familias.length + 
+        filters.categorias.length +
+        filters.tipos.length + 
+        filters.generos.length +
         filters.proveedores.length +
         (filters.search ? 1 : 0) +
-        (filters.comprobante ? 1 : 0) +
-        (datesModified ? 1 : 0);
+        (!isStock ? (
+            asVentas.rubros.length + 
+            asVentas.mediosPago.length + 
+            asVentas.cuentas.length + 
+            asVentas.clientes.length + 
+            asVentas.cuotas.length + 
+            (asVentas.comprobante ? 1 : 0) + 
+            (datesModified ? 1 : 0)
+        ) : 0);
 
     const handleClear = () => {
         setSearchInput('');
-        setComprobanteInput('');
-        onFiltersChange(getInitialFilters());
+        if (!isStock) setComprobanteInput('');
+        onFiltersChange(isStock ? getInitialStockFilters() : getInitialFilters());
     };
 
     // ── Collapsed ─────────────────────────────────────────────────────────────
@@ -336,26 +352,54 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
                 </div>
 
                 {/* Búsqueda por comprobante */}
-                <div className="px-4 py-3">
-                    <div className="relative">
-                        <FileSearch size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-                        <input
-                            type="text"
-                            placeholder="N° de Comprobante..."
-                            value={comprobanteInput}
-                            onChange={e => handleComprobanteChange(e.target.value)}
-                            className="w-full bg-slate-800/70 border border-slate-700 text-slate-200 placeholder-slate-500 rounded-md pl-8 pr-7 py-1.5 text-xs focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
-                        />
-                        {comprobanteInput && (
-                            <button
-                                onClick={() => handleComprobanteChange('')}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
-                            >
-                                <X size={12} />
-                            </button>
-                        )}
+                {!isStock && (
+                    <div className="px-4 py-3 border-b border-slate-800">
+                        <div className="relative">
+                            <FileSearch size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                            <input
+                                type="text"
+                                placeholder="N° de Comprobante..."
+                                value={comprobanteInput}
+                                onChange={e => handleComprobanteChange(e.target.value)}
+                                className="w-full bg-slate-800/70 border border-slate-700 text-slate-200 placeholder-slate-500 rounded-md pl-8 pr-7 py-1.5 text-xs focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
+                            />
+                            {comprobanteInput && (
+                                <button
+                                    onClick={() => handleComprobanteChange('')}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
+                                >
+                                    <X size={12} />
+                                </button>
+                            )}
+                        </div>
                     </div>
-                </div>
+                )}
+
+                {/* Período de Análisis (Solo para Stock) */}
+                {hideDateRange && (
+                    <div className="px-4 py-3 border-b border-slate-800">
+                        <div className="flex flex-col gap-1.5">
+                            <span className="text-[10px] text-slate-500 uppercase tracking-wide font-medium flex items-center gap-2">
+                                <CalendarDays size={12} className="text-slate-400" />
+                                Período de Análisis
+                            </span>
+                            <div className="relative">
+                                <select
+                                    value={filters.periodoAnalisis}
+                                    onChange={e => onFiltersChange({ ...filters, periodoAnalisis: e.target.value as any })}
+                                    className="w-full bg-slate-800/70 border border-slate-700 text-slate-200 rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors appearance-none cursor-pointer pr-8"
+                                >
+                                    <option value="12m">Últimos 12 Meses</option>
+                                    <option value="6m">Últimos 6 Meses</option>
+                                    <option value="3m">Últimos 3 Meses</option>
+                                    <option value="1m">Último Mes</option>
+                                    <option value="30d">Últimos 30 Días</option>
+                                </select>
+                                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Acordeones con scroll */}
@@ -383,25 +427,27 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
                 </Accordion>
 
                 {/* Rubro */}
-                <Accordion
-                    title="Rubro"
-                    icon={<Tag size={14} />}
-                    count={filters.rubros.length}
-                    isLoading={isLoadingOptions}
-                    defaultOpen
-                >
-                    {options.rubros.length === 0
-                        ? <span className="text-xs text-slate-500">Sin datos para el período</span>
-                        : options.rubros.map(r => (
-                            <CheckItem
-                                key={r}
-                                label={r}
-                                checked={filters.rubros.includes(r)}
-                                onChange={() => toggle('rubros', r)}
-                            />
-                        ))
-                    }
-                </Accordion>
+                {!isStock && (
+                    <Accordion
+                        title="Rubro"
+                        icon={<Tag size={14} />}
+                        count={asVentas.rubros.length}
+                        isLoading={isLoadingOptions}
+                        defaultOpen
+                    >
+                        {options.rubros.length === 0
+                            ? <span className="text-xs text-slate-500">Sin datos</span>
+                            : options.rubros.map(r => (
+                                <CheckItem
+                                    key={r}
+                                    label={r}
+                                    checked={asVentas.rubros.includes(r)}
+                                    onChange={() => toggle('rubros', r)}
+                                />
+                            ))
+                        }
+                    </Accordion>
+                )}
 
                 {/* Familia */}
                 <Accordion
@@ -422,42 +468,46 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
                 </Accordion>
 
                 {/* Medio de Pago — valores dinámicos desde la columna SQL 'Medio de Pago' */}
-                <Accordion
-                    title="Medio de Pago"
-                    icon={<CreditCard size={14} />}
-                    count={filters.mediosPago.length}
-                    isLoading={isLoadingOptions}
-                >
-                    {options.mediosPago.length === 0
-                        ? <span className="text-xs text-slate-500">Sin datos para el período</span>
-                        : <SearchableCheckList
-                            items={options.mediosPago}
-                            selected={filters.mediosPago}
-                            onToggle={toggleMedioPago}
-                            placeholder="Buscar medio de pago..."
-                        />
-                    }
-                </Accordion>
+                {!isStock && (
+                    <Accordion
+                        title="Medio de Pago"
+                        icon={<CreditCard size={14} />}
+                        count={asVentas.mediosPago.length}
+                        isLoading={isLoadingOptions}
+                    >
+                        {options.mediosPago.length === 0
+                            ? <span className="text-xs text-slate-500">Sin datos para el período</span>
+                            : <SearchableCheckList
+                                items={options.mediosPago}
+                                selected={asVentas.mediosPago}
+                                onToggle={toggleMedioPago}
+                                placeholder="Buscar medio de pago..."
+                            />
+                        }
+                    </Accordion>
+                )}
 
                 {/* Cuotas — dinámico via DISTINCT cant_cuotas */}
-                <Accordion
-                    title="Cuotas"
-                    icon={<Hash size={14} />}
-                    count={filters.cuotas.length}
-                    isLoading={isLoadingOptions}
-                >
-                    {options.cuotas.length === 0
-                        ? <span className="text-xs text-slate-500">Sin cuotas en el período</span>
-                        : options.cuotas.map(c => (
-                            <CheckItem
-                                key={c}
-                                label={`${c} cuota${c === 1 ? '' : 's'}`}
-                                checked={filters.cuotas.includes(c)}
-                                onChange={() => toggleCuota(c)}
-                            />
-                        ))
-                    }
-                </Accordion>
+                {!isStock && (
+                    <Accordion
+                        title="Cuotas"
+                        icon={<Hash size={14} />}
+                        count={asVentas.cuotas.length}
+                        isLoading={isLoadingOptions}
+                    >
+                        {options.cuotas.length === 0
+                            ? <span className="text-xs text-slate-500">Sin cuotas en el período</span>
+                            : options.cuotas.map(c => (
+                                <CheckItem
+                                    key={c}
+                                    label={`${c} cuota${c === 1 ? '' : 's'}`}
+                                    checked={asVentas.cuotas.includes(c)}
+                                    onChange={() => toggleCuota(c)}
+                                />
+                            ))
+                        }
+                    </Accordion>
+                )}
 
                 {/* Categoría */}
                 <Accordion
@@ -532,22 +582,24 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
                 </Accordion>
 
                 {/* Cliente — con buscador interno */}
-                <Accordion
-                    title="Cliente"
-                    icon={<Users size={14} />}
-                    count={filters.clientes.length}
-                    isLoading={isLoadingOptions}
-                >
-                    {options.clientes.length === 0
-                        ? <span className="text-xs text-slate-500">Sin datos para el período</span>
-                        : <SearchableCheckList
-                            items={options.clientes}
-                            selected={filters.clientes}
-                            onToggle={v => toggle('clientes', v)}
-                            placeholder="Buscar cliente..."
-                        />
-                    }
-                </Accordion>
+                {!isStock && (
+                    <Accordion
+                        title="Cliente"
+                        icon={<Users size={14} />}
+                        count={asVentas.clientes.length}
+                        isLoading={isLoadingOptions}
+                    >
+                        {options.clientes.length === 0
+                            ? <span className="text-xs text-slate-500">Sin datos para el período</span>
+                            : <SearchableCheckList
+                                items={options.clientes}
+                                selected={asVentas.clientes}
+                                onToggle={v => toggle('clientes', v)}
+                                placeholder="Buscar cliente..."
+                            />
+                        }
+                    </Accordion>
+                )}
             </div>
 
             {/* Limpiar */}

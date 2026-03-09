@@ -216,7 +216,21 @@ app.get('/api/stock', async (req, res) => {
                 -- Costo Unitario valora compras + IVA DINÁMICO (MINI CASE)
                 MAX(ISNULL(STA12.PRECIO_U_L, 0) * (CASE WHEN STA11.COD_IVA = 3 THEN 1.105 ELSE 1.21 END)) AS CostoUnitario,
                 -- Fecha de Última Compra
-                MAX(STA12.FECHA_ULC) AS FechaUltimaCompra
+                MAX(STA12.FECHA_ULC) AS FechaUltimaCompra,
+
+                -- Estadísticas de Venta (Local)
+                MAX(STATS_LOCAL.PROM_12M) AS prom12m,
+                MAX(STATS_LOCAL.PROM_6M) AS prom6m,
+                MAX(STATS_LOCAL.PROM_3M) AS prom3m,
+                MAX(STATS_LOCAL.PROM_1M) AS prom1m,
+                MAX(STATS_LOCAL.VENTA_30D) AS venta30d,
+                
+                -- Estadísticas de Venta (General 1001)
+                MAX(STATS_GRAL.PROM_12M) AS prom12m_gral,
+                MAX(STATS_GRAL.PROM_6M) AS prom6m_gral,
+                MAX(STATS_GRAL.PROM_3M) AS prom3m_gral,
+                MAX(STATS_GRAL.PROM_1M) AS prom1m_gral,
+                MAX(STATS_GRAL.VENTA_30D) AS venta30d_gral
 
             FROM
                 CTA_SALDO_ARTICULO_DEPOSITO 
@@ -240,6 +254,14 @@ app.get('/api/stock', async (req, res) => {
                     AND CTA_SALDO_ARTICULO_DEPOSITO.ID_SUCURSAL = CTA_ARTICULO_SUCURSAL.ID_SUCURSAL
                 )
                 LEFT JOIN CTA_MEDIDA AS MEDIDA_STOCK ON (CTA_ARTICULO_SUCURSAL.ID_CTA_MEDIDA_STOCK = MEDIDA_STOCK.ID_CTA_MEDIDA)
+                LEFT JOIN RETAIL_ESTADISTICAS_VENTA AS STATS_LOCAL ON (
+                    STA11.COD_ARTICU COLLATE DATABASE_DEFAULT = STATS_LOCAL.COD_ARTICU COLLATE DATABASE_DEFAULT
+                    AND SUCURSAL.NRO_SUCURSAL = STATS_LOCAL.SUCURSAL
+                )
+                LEFT JOIN RETAIL_ESTADISTICAS_VENTA AS STATS_GRAL ON (
+                    STA11.COD_ARTICU COLLATE DATABASE_DEFAULT = STATS_GRAL.COD_ARTICU COLLATE DATABASE_DEFAULT
+                    AND STATS_GRAL.SUCURSAL = 1001
+                )
             WHERE 
                 CTA_ARTICULO.STOCK = 1 
                 ${whereSucursal}
@@ -256,7 +278,7 @@ app.get('/api/stock', async (req, res) => {
             HAVING 
                 SUM(CTA_SALDO_ARTICULO_DEPOSITO.CANTIDAD_STOCK) > 0
             ORDER BY 
-                CTA_ARTICULO.COD_CTA_ARTICULO ASC
+                CTA_ARTICULO.COD_CTA_ARTICULO
         `;
 
         const result = await request.query(query);
