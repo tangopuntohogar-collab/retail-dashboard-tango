@@ -111,6 +111,15 @@ export interface VentasFilters {
   periodoAnalisis: '12m' | '6m' | '3m' | '1m' | '30d';
 }
 
+/** Fila del Detalle de Efectivo por Sucursal (saldos de tesorería) */
+export interface SaldoCajaRow {
+  nro_sucursal: string;
+  cod_cuenta: string;
+  desc_cuenta: string;
+  saldo: number;
+  fecha_actualizacion: string;
+}
+
 export interface StockFilters {
   fechaDesde: string;
   fechaHasta: string;

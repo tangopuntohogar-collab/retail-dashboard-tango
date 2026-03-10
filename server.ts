@@ -383,6 +383,45 @@ app.get('/api/stock', async (req, res) => {
 });
 
 /**
+ * GET /api/saldos-cajas
+ * Saldos de tesorería por sucursal y cuenta — último registro por sucursal/cuenta.
+ */
+app.get('/api/saldos-cajas', async (req, res) => {
+    try {
+        const pool = await sql.connect(config);
+        const query = `
+            WITH UltimosSaldos AS (
+                SELECT
+                    S.NRO_SUCURSAL AS [NRO. SUCURSAL],
+                    T.COD_CTA_CUENTA_TESORERIA AS [COD. CUENTA],
+                    T.DESC_CTA_CUENTA_TESORERIA AS [DESC. CUENTA],
+                    ST.SALDO_CORRIENTE AS [SALDO],
+                    ST.FECHA_IMPORTACION AS [FECHA_ACTUALIZACION],
+                    ROW_NUMBER() OVER (PARTITION BY S.NRO_SUCURSAL, T.COD_CTA_CUENTA_TESORERIA ORDER BY ST.FECHA_IMPORTACION DESC) as rn
+                FROM CTA_SALDO_CUENTA_TESORERIA ST
+                LEFT JOIN CTA_CUENTA_TESORERIA T ON T.ID_CTA_CUENTA_TESORERIA = ST.ID_CTA_CUENTA_TESORERIA
+                LEFT JOIN SUCURSAL S ON ST.ID_SUCURSAL = S.ID_SUCURSAL
+                WHERE (S.NRO_SUCURSAL = 1004 AND T.COD_CTA_CUENTA_TESORERIA = 11010)
+                   OR (S.NRO_SUCURSAL = 1017 AND T.COD_CTA_CUENTA_TESORERIA = 11050)
+                   OR (S.NRO_SUCURSAL = 1002 AND T.COD_CTA_CUENTA_TESORERIA = 11020)
+                   OR (S.NRO_SUCURSAL = 1008 AND T.COD_CTA_CUENTA_TESORERIA = 11000)
+                   OR (S.NRO_SUCURSAL = 1014 AND T.COD_CTA_CUENTA_TESORERIA = 11040)
+                   OR (S.NRO_SUCURSAL = 1018 AND T.COD_CTA_CUENTA_TESORERIA = 11070)
+                   OR (S.NRO_SUCURSAL = 1019 AND T.COD_CTA_CUENTA_TESORERIA = 11060)
+            )
+            SELECT [NRO. SUCURSAL], [COD. CUENTA], [DESC. CUENTA], [SALDO], [FECHA_ACTUALIZACION]
+            FROM UltimosSaldos WHERE rn = 1 ORDER BY [NRO. SUCURSAL]
+        `;
+        const result = await pool.request().query(query);
+        console.log(`[RETAIL] /api/saldos-cajas → ${result.recordset.length} filas`);
+        res.json(result.recordset);
+    } catch (err) {
+        console.error('[RETAIL] Error SQL /api/saldos-cajas:', err);
+        res.status(500).json({ error: String(err) });
+    }
+});
+
+/**
  * GET /api/ventas/stats
  * Mismos query params que /api/ventas (sin page/limit).
  * Devuelve totales agregados para gráficos sin enviar el detalle completo.

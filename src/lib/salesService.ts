@@ -1,4 +1,4 @@
-import { VentaRow, VentasFilters, DashboardMetrics, DashboardKPIs, StackedDataPoint, TopArticle, RubroPoint } from '../types';
+import { VentaRow, VentasFilters, DashboardMetrics, DashboardKPIs, StackedDataPoint, TopArticle, RubroPoint, SaldoCajaRow } from '../types';
 
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -253,6 +253,29 @@ export async function fetchVentasParaCobros(filters: VentasFilters): Promise<Ven
         const all = await getAllVentas(filters.fechaDesde, filters.fechaHasta);
         const filtered = applyFiltersLocal(all, filters);
         return { actual: filtered, anterior: [] };
+    }
+}
+
+/**
+ * Saldos de cajas (tesorería) por sucursal — último registro por sucursal/cuenta.
+ */
+export async function fetchSaldosCajas(): Promise<SaldoCajaRow[]> {
+    try {
+        const baseUrl = API_URL.replace('/api/ventas', '');
+        const url = `${baseUrl}/api/saldos-cajas`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
+        const raw: any[] = await response.json();
+        return raw.map((r: any) => ({
+            nro_sucursal: String(r['NRO. SUCURSAL'] ?? r.NRO_SUCURSAL ?? ''),
+            cod_cuenta: String(r['COD. CUENTA'] ?? r.COD_CTA_CUENTA_TESORERIA ?? ''),
+            desc_cuenta: String(r['DESC. CUENTA'] ?? r.DESC_CTA_CUENTA_TESORERIA ?? ''),
+            saldo: Number(r.SALDO ?? r.SALDO_CORRIENTE ?? 0),
+            fecha_actualizacion: r['FECHA_ACTUALIZACION'] ?? r.FECHA_IMPORTACION ?? '',
+        }));
+    } catch (err) {
+        console.error('[salesService] fetchSaldosCajas error:', err);
+        return [];
     }
 }
 

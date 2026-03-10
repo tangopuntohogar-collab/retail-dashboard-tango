@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { StatsCard } from './StatsCard';
-import { PaymentMix, DashboardMetrics, VentaRow } from '../types';
+import { DashboardMetrics, VentaRow } from '../types';
 import { Loader2 } from 'lucide-react';
 
 /** Categoriza el medio de pago para el Resumen de Cobros (mismo mapeo que Detalle) */
@@ -33,18 +33,12 @@ interface DashboardViewProps {
   ventasParaCobros: VentaRow[];
   /** Ventas del periodo anterior (mismo rango de días, mes previo) — para gráfico comparativo */
   ventasAnterior: VentaRow[];
+  /** Saldos de cajas (tesorería) por sucursal */
+  saldosCajas: import('../types').SaldoCajaRow[];
   isLoading: boolean;
 }
 
-/** Las 4 categorías de negocio en orden fijo de apilado (base → tope) */
-const CATEGORIAS = [
-  { key: 'CONTADO EFECTIVO', color: '#10b981', label: 'Contado Efectivo' }, // esmeralda
-  { key: 'TARJETA', color: '#3b82f6', label: 'Tarjeta' }, // azul
-  { key: 'CRÉDITO FINANCIERA', color: '#f59e0b', label: 'Crédito Financiera' }, // ámbar
-  { key: 'CUENTA CORRIENTE', color: '#8b5cf6', label: 'Cuenta Corriente' }, // violeta
-];
-
-export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, filters, ventasParaCobros, ventasAnterior = [], isLoading }) => {
+export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, filters, ventasParaCobros, ventasAnterior = [], saldosCajas = [], isLoading }) => {
   const formatCurrency = (v: number) =>
     new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(v);
 
@@ -60,96 +54,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
     const ticketPromedio = voucherCount > 0 ? totalFacturado / voucherCount : 0;
     return { totalFacturado, margenTotal, rentabilidad, ticketPromedio };
   }, [data]);
-
-  /* ─── Mix de Pagos agrupado — 4 categorías fijas ─── */
-  const paymentMix = useMemo(() => {
-    if (!data) return [];
-    const totals = new Map<string, number>();
-    data.stacked_data.forEach(d => {
-      totals.set(d.categoria_negocio, (totals.get(d.categoria_negocio) ?? 0) + d.monto);
-    });
-
-    const grand = Array.from(totals.values()).reduce((s, v) => s + v, 0) || 1;
-    return CATEGORIAS.map(c => {
-      const amt = totals.get(c.key) ?? 0;
-      return {
-        key: c.key,
-        label: c.label,
-        color: c.color,
-        amount: amt,
-        pct: Math.round((amt / grand) * 100),
-      };
-    }).filter(c => c.amount > 0);
-  }, [data]);
-
-  /* ─── Categoría seleccionada para filtrar el detalle ─── */
-  const [selectedCat, setSelectedCat] = useState<string | null>(null);
-
-  /* ─── Mix Detallado — medios individuales sin agrupar ─── */
-  const detailMix = useMemo(() => {
-    if (!data) return [];
-    const map = new Map<string, { amount: number; cat: string }>();
-    data.stacked_data.forEach(d => {
-      if (selectedCat && d.categoria_negocio !== selectedCat) return;
-      const prev = map.get(d.medio_pago);
-      if (prev) prev.amount += d.monto;
-      else map.set(d.medio_pago, { amount: d.monto, cat: d.categoria_negocio });
-    });
-
-    const allItems = Array.from(map.entries())
-      .map(([label, { amount, cat }]) => ({
-        label,
-        amount,
-        color: CATEGORIAS.find(c => c.key === cat)?.color ?? '#94a3b8',
-      }))
-      .sort((a, b) => b.amount - a.amount);
-
-    const grand = allItems.reduce((s, v) => s + v.amount, 0) || 1;
-
-    if (allItems.length <= 11) {
-      return allItems.map(item => ({
-        ...item,
-        pct: Math.round((item.amount / grand) * 100),
-      }));
-    }
-
-    const top11 = allItems.slice(0, 11);
-    const othersAmount = allItems.slice(11).reduce((s, v) => s + v.amount, 0);
-
-    const result = top11.map(item => ({
-      ...item,
-      pct: Math.round((item.amount / grand) * 100),
-    }));
-
-    result.push({
-      label: 'OTROS',
-      amount: othersAmount,
-      color: '#64748b',
-      pct: Math.round((othersAmount / grand) * 100),
-    });
-
-    return result;
-  }, [data, selectedCat]);
-
-  /* conic-gradient para el pie agrupado */
-  const conicGradient = useMemo(() => {
-    let acc = 0;
-    return paymentMix.map(p => {
-      const start = acc;
-      acc += p.pct;
-      return `${p.color} ${start}% ${acc}%`;
-    }).join(', ');
-  }, [paymentMix]);
-
-  /* conic-gradient para el pie de detalle */
-  const detailConicGradient = useMemo(() => {
-    let acc = 0;
-    return detailMix.map(p => {
-      const start = acc;
-      acc += p.pct;
-      return `${p.color} ${start}% ${acc}%`;
-    }).join(', ');
-  }, [detailMix]);
 
   /* ─── Resumen de Cobros por Sucursal — misma fuente que Detalle (VentaRow[]) ─── */
   const cobrosMatrix = useMemo(() => {
@@ -415,120 +319,61 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
             })()}
           </div>
 
-          {/* Mix de Pagos — card doble */}
-          <div className="bg-card-dark rounded-xl border border-border-dark p-6 flex flex-col shadow-sm gap-5">
-            {/* Header */}
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <h3 className="text-base font-semibold text-white leading-tight">Mix de Pagos</h3>
-                <p className="text-[11px] text-slate-500 mt-0.5">Clic en una categoría para filtrar el detalle</p>
-              </div>
-              {selectedCat && (
-                <button
-                  onClick={() => setSelectedCat(null)}
-                  className="text-[10px] text-sky-400 hover:text-sky-300 whitespace-nowrap border border-sky-800 rounded px-2 py-0.5 transition-colors"
-                >
-                  × Limpiar filtro
-                </button>
-              )}
+          {/* Detalle de Efectivo por Sucursal (saldos de tesorería) */}
+          <div className="bg-card-dark rounded-xl border border-border-dark p-5 flex flex-col shadow-sm">
+            <div className="mb-4">
+              <h3 className="text-base font-semibold text-white leading-tight">Detalle de Efectivo por Sucursal</h3>
+              <p className="text-[11px] text-slate-500 mt-0.5">Saldos de tesorería — último registro por sucursal/cuenta</p>
             </div>
-
-            {/* Dos paneles */}
-            <div className="flex gap-5 flex-1 min-h-0" style={{ minHeight: 360 }}>
-
-              {/* ── Panel A: 4 Categorías agrupadas (donut + leyenda clicable) ── */}
-              <div className="flex-1 flex flex-col items-center gap-3 min-w-0">
-                <span className="text-[10px] text-slate-500 self-start font-medium uppercase tracking-wide">Agrupado</span>
-                {paymentMix.length === 0 ? (
-                  <span className="text-slate-500 text-xs flex-1 flex items-center">Sin datos</span>
-                ) : (
-                  <>
-                    {/* Donut */}
-                    <div
-                      className="relative rounded-full shrink-0 cursor-default"
-                      style={{ width: 200, height: 200, background: `conic-gradient(${conicGradient || '#1e293b 0% 100%'})` }}
-                    >
-                      <div
-                        className="absolute inset-0 m-auto rounded-full bg-card-dark flex flex-col items-center justify-center"
-                        style={{ width: 130, height: 130 }}
-                      >
-                        <span className="text-xl font-bold text-white leading-tight">
-                          {selectedCat
-                            ? `${paymentMix.find(p => p.key === selectedCat)?.pct ?? 0}%`
-                            : `${paymentMix[0]?.pct ?? 0}%`}
-                        </span>
-                        <span className="text-[9px] text-slate-400 text-center px-1 leading-tight">
-                          {selectedCat
-                            ? CATEGORIAS.find(c => c.key === selectedCat)?.label
-                            : paymentMix[0]?.label}
-                        </span>
-                      </div>
-                    </div>
-                    {/* Leyenda clicable */}
-                    <div className="w-full flex flex-col gap-1">
-                      {paymentMix.map(p => (
-                        <button
-                          key={p.key}
-                          onClick={() => setSelectedCat(prev => prev === p.key ? null : p.key)}
-                          className={`w-full flex items-center gap-2 rounded-md px-2 py-1 text-left transition-all ${selectedCat === p.key
-                            ? 'bg-slate-700/70 ring-1 ring-slate-600'
-                            : 'hover:bg-slate-800/60'
-                            }`}
-                        >
-                          <span className="size-2.5 rounded-sm shrink-0" style={{ backgroundColor: p.color }} />
-                          <span className="text-[10px] text-slate-300 flex-1 truncate">{p.label}</span>
-                          <span className="text-[10px] font-bold shrink-0" style={{ color: p.color }}
-                            title={fmtFull(p.amount)}>
-                            {p.pct}%
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* Divisor */}
-              <div className="w-px bg-slate-800 self-stretch" />
-
-              {/* ── Panel B: Medios individuales (barras horizontales) ── */}
-              <div className="flex-1 flex flex-col gap-2 min-w-0">
-                <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wide">
-                  {selectedCat
-                    ? `${CATEGORIAS.find(c => c.key === selectedCat)?.label}`
-                    : 'Detalle individual'}
-                </span>
-                {detailMix.length === 0 ? (
-                  <span className="text-slate-500 text-xs flex items-center flex-1">Sin datos</span>
-                ) : (
-                  <div className="flex flex-col gap-2 overflow-y-auto flex-1 pr-0.5">
-                    {detailMix.map((d, i) => (
-                      <div key={i} className="group relative">
-                        {/* Tooltip */}
-                        <div className="absolute left-0 bottom-full mb-1 z-30 hidden group-hover:flex flex-col pointer-events-none">
-                          <div className="bg-slate-900 border border-slate-700 text-white text-[10px] py-1.5 px-2.5 rounded shadow-xl whitespace-nowrap">
-                            <span className="font-semibold block">{d.label}</span>
-                            <span className="text-emerald-400">{fmtFull(d.amount)}</span>
-                            <span className="text-slate-400 ml-1.5">({d.pct}%)</span>
-                          </div>
-                          <div className="size-1.5 bg-slate-900 rotate-45 -mt-1 ml-3 border-r border-b border-slate-700" />
-                        </div>
-                        <div className="flex items-center justify-between mb-0.5">
-                          <span className="text-[9px] text-slate-400 truncate max-w-[95px]">{d.label}</span>
-                          <span className="text-[9px] text-slate-500 shrink-0 ml-1">{d.pct}%</span>
-                        </div>
-                        <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all duration-500"
-                            style={{ width: `${Math.max(d.pct, 2)}%`, backgroundColor: d.color }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
+            <div className="overflow-x-auto rounded-lg border border-border-dark">
+              {saldosCajas.length === 0 ? (
+                <div className="px-6 py-12 text-center text-slate-500 text-sm">Sin datos</div>
+              ) : (
+                <table className="w-full text-sm border-collapse">
+                  <thead className="bg-[#0f172a] text-xs uppercase font-semibold text-slate-300 sticky top-0 z-10">
+                    <tr>
+                      <th className="px-4 py-3 text-left tracking-wide whitespace-nowrap">Sucursal</th>
+                      <th className="px-4 py-3 text-left tracking-wide whitespace-nowrap">Cód. Cuenta</th>
+                      <th className="px-4 py-3 text-left tracking-wide whitespace-nowrap">Descripción</th>
+                      <th className="px-4 py-3 text-right tracking-wide whitespace-nowrap">Saldo</th>
+                      <th className="px-4 py-3 text-right tracking-wide whitespace-nowrap">Fecha Actualización</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border-dark bg-[#020617]">
+                    {saldosCajas.map((row, i) => {
+                      const saldo = Number(row.saldo ?? 0);
+                      const fechaVal = row.fecha_actualizacion;
+                      let fechaFmt = '-';
+                      if (fechaVal) {
+                        try {
+                          const d = typeof fechaVal === 'string' ? new Date(fechaVal) : fechaVal;
+                          if (!isNaN(d.getTime())) {
+                            const day = String(d.getDate()).padStart(2, '0');
+                            const month = String(d.getMonth() + 1).padStart(2, '0');
+                            const year = String(d.getFullYear()).slice(-2);
+                            const h = String(d.getHours()).padStart(2, '0');
+                            const min = String(d.getMinutes()).padStart(2, '0');
+                            fechaFmt = `${day}/${month}/${year} ${h}:${min}`;
+                          }
+                        } catch (_) {
+                          fechaFmt = String(fechaVal).slice(0, 16);
+                        }
+                      }
+                      return (
+                        <tr key={i} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="px-4 py-3 font-medium text-slate-200 whitespace-nowrap">{row.nro_sucursal}</td>
+                          <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{row.cod_cuenta}</td>
+                          <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{row.desc_cuenta}</td>
+                          <td className={`px-4 py-3 text-right font-semibold tabular-nums whitespace-nowrap ${saldo >= 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                            {formatCurrency(saldo)}
+                          </td>
+                          <td className="px-4 py-3 text-right text-slate-500 text-xs tabular-nums whitespace-nowrap">{fechaFmt}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         </div>
