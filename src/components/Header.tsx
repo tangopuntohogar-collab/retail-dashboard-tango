@@ -61,9 +61,12 @@ async function exportarExcel(filters: VentasFilters, onProgress?: (msg: string) 
     'Costo Unit.', 'Rentab.'
   ];
 
-  const formatDate = (ts: string) => {
-    if (!ts) return '';
-    return new Date(ts).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const formatDate = (dateString: string) => {
+    if (!dateString) return '';
+    const iso = dateString.split('T')[0];
+    const [year, month, day] = iso.split('-');
+    if (!year || !month || !day) return '';
+    return `${day}/${month}/${year}`;
   };
 
   // ── Datos (21 campos mapeados) ───────────────────────────────────────────

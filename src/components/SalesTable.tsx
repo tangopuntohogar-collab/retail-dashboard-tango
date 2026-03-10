@@ -21,9 +21,12 @@ export const SalesTable: React.FC<SalesTableProps> = ({ data, isLoading, totalIm
       maximumFractionDigits: 2,
     }).format(val ?? 0);
 
-  const formatDate = (ts: string) => {
-    if (!ts) return '-';
-    return new Date(ts).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  const formatDate = (dateString: string) => {
+    if (!dateString) return '-';
+    const iso = dateString.split('T')[0];
+    const [year, month, day] = iso.split('-');
+    if (!year || !month || !day) return '-';
+    return `${day}/${month}/${year.slice(-2)}`;
   };
 
   /**

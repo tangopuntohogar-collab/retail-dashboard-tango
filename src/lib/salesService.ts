@@ -31,9 +31,14 @@ function mapVenta(row: any): VentaRow {
         rentabilidad = ((precioUnit - costoUnitario) / costoUnitario) * 100;
     }
 
+    const fechaRaw = row['Fecha'];
+    const fecha = typeof fechaRaw === 'string'
+        ? (fechaRaw.includes('T') ? fechaRaw.split('T')[0] : fechaRaw)
+        : (fechaRaw ? String(fechaRaw).slice(0, 10) : '');
+
     return {
         // ── Columnas reales ──────────────────────────────────────────────────
-        fecha:          row['Fecha']                  ?? '',
+        fecha,
         nro_sucursal:   String(row['Nro. Sucursal']   ?? ''),
         t_comp:         row['Tipo de comprobante']    ?? '',
         n_comp:         row['Nro. Comprobante']       ?? '',
@@ -168,7 +173,9 @@ export async function fetchVentas(
         if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
 
         const json = await response.json();
-        const raw: any[] = Array.isArray(json) ? json : (json.data ?? []);
+        let raw: any[] = Array.isArray(json) ? json : (json.data ?? []);
+        const getPeriodo = (r: any) => (r?.periodo_comparativo ?? r?.periodo_Comparativo ?? 'actual').toString().toLowerCase();
+        raw = raw.filter((r: any) => getPeriodo(r) === 'actual');
         console.log('Fila 0 desde Backend:', raw[0]);
         const total: number = json.total ?? raw.length;
         const totalImporteGlobal: number = Number(json.meta?.totalImporteGlobal ?? 0);
@@ -193,6 +200,59 @@ export async function fetchVentas(
         filtered.sort((a, b) => b.fecha.localeCompare(a.fecha));
         const totalImporteGlobal = filtered.reduce((acc, r) => acc + (r.totalIVA ?? 0), 0);
         return { data: filtered.slice(from, from + PAGE_SIZE), count: filtered.length, totalImporteGlobal };
+    }
+}
+
+export interface VentasParaCobrosResult {
+    actual: VentaRow[];
+    anterior: VentaRow[];
+}
+
+/**
+ * Trae ventas para la matriz de cobros y el gráfico comparativo.
+ * Cuando hay desde/hasta, pide también el periodo anterior (mismo rango, mes previo).
+ */
+export async function fetchVentasParaCobros(filters: VentasFilters): Promise<VentasParaCobrosResult> {
+    const params = new URLSearchParams();
+    if (filters.fechaDesde) params.set('desde', filters.fechaDesde);
+    if (filters.fechaHasta) params.set('hasta', filters.fechaHasta);
+    if (filters.mediosPago?.length === 1) params.set('medioPago', filters.mediosPago[0]);
+    if (filters.familias?.length === 1) params.set('familia', filters.familias[0]);
+    if (filters.categorias?.length === 1) params.set('categoria', filters.categorias[0]);
+    if (filters.proveedores?.length === 1) params.set('proveedor', filters.proveedores[0]);
+    filters.sucursales?.forEach(s => params.append('sucursal', String(s)));
+    params.set('page', '0');
+    params.set('limit', '5000');
+    if (filters.fechaDesde && filters.fechaHasta) params.set('incluirPeriodoAnterior', '1');
+
+    try {
+        const url = `${API_URL}?${params}`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
+        const json = await response.json();
+        const raw: any[] = Array.isArray(json) ? json : (json.data ?? []);
+        const getPeriodo = (r: any) => (r.periodo_comparativo ?? r.periodo_Comparativo ?? r.PERIODO_COMPARATIVO ?? 'actual').toString().toLowerCase();
+        const rawActual = raw.filter((r: any) => getPeriodo(r) === 'actual');
+        const rawAnterior = raw.filter((r: any) => getPeriodo(r) === 'anterior');
+        console.log('[salesService] fetchVentasParaCobros - raw:', raw.length, '| actual:', rawActual.length, '| anterior:', rawAnterior.length);
+        const serverFiltered = {
+            ...filters,
+            sucursales: [] as string[],
+            mediosPago: filters.mediosPago?.length === 1 ? [] : filters.mediosPago,
+            familias: filters.familias?.length === 1 ? [] : filters.familias,
+            categorias: filters.categorias?.length === 1 ? [] : filters.categorias,
+            proveedores: filters.proveedores,
+        };
+        let actual = rawActual.map(mapVenta);
+        let anterior = rawAnterior.map(mapVenta);
+        actual = applyFiltersLocal(actual, serverFiltered as VentasFilters);
+        anterior = applyFiltersLocal(anterior, serverFiltered as VentasFilters);
+        return { actual, anterior };
+    } catch (err) {
+        console.error('[salesService] fetchVentasParaCobros error, fallback getAllVentas:', err);
+        const all = await getAllVentas(filters.fechaDesde, filters.fechaHasta);
+        const filtered = applyFiltersLocal(all, filters);
+        return { actual: filtered, anterior: [] };
     }
 }
 
@@ -282,6 +342,12 @@ export async function fetchVentasAgregadas(filters: VentasFilters): Promise<Dash
             return { nro_sucursal: suc, categoria_negocio: cat, medio_pago: med, monto };
         });
 
+        const cobros_por_medio_sucursal = stacked_data.map(d => ({
+            nro_sucursal: d.nro_sucursal,
+            medio_pago: d.medio_pago,
+            monto: d.monto,
+        }));
+
         // Top artículos por totalIVA neto (descuentos de NC ya restados)
         const articleMap = new Map<string, { desc: string, total: number, cant: number }>();
         filtered.forEach(r => {
@@ -303,7 +369,7 @@ export async function fetchVentasAgregadas(filters: VentasFilters): Promise<Dash
         const rubro_points: RubroPoint[] = Array.from(rubroMap.entries()).map(([rubro, info]) => ({
             rubro, avg_margen: 0, total_cantidad: info.cant
         }));
-        return { kpis, stacked_data, top_articles, rubro_points };
+        return { kpis, stacked_data, cobros_por_medio_sucursal, top_articles, rubro_points };
     }
 }
 

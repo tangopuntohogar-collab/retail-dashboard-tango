@@ -82,9 +82,11 @@ function buildWhere(
     return clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
 }
 
+
 // ─── Columnas para el detalle ─────────────────────────────────────────────────
 const VENTAS_COLUMNS = `
-    [Fecha], [Nro. Sucursal], [Tipo de comprobante], [Nro. Comprobante],
+    FORMAT(Dashboard_Ventas_Local.[Fecha], 'yyyy-MM-dd') AS Fecha,
+    [Nro. Sucursal], [Tipo de comprobante], [Nro. Comprobante],
     [Cód. vendedor], [Cód. Artículo], [Descripción], CTA_ARTICULO.DESC_ADICIONAL_ARTICULO AS DescripcionAdicional,
     [Medio de Pago],[Precio Neto], [Precio Unitario], [Total cIVA],
     [Familia], [Categoria], [Cantidad], [PROVEEDOR (Adic.)], [PR.ÚLT.CPA C/IVA] AS CostoUnitario`;
@@ -113,44 +115,124 @@ app.get('/api/ventas', async (req, res) => {
             ? (q.sucursal as string[])
             : q.sucursal ? [q.sucursal] : [];
 
-        // ── Stats globales (COUNT + SUM) — una sola query, independiente de la paginación ──
-        const statsReq = pool.request();
-        const whereStats = buildWhere(statsReq, {
-            desde: q.desde, hasta: q.hasta,
-            medioPago: q.medioPago, familia: q.familia, categoria: q.categoria,
-            proveedor: q.proveedor,
-            sucursales: sucArray,
-        });
-        const statsResult = await statsReq.query(`
-            SELECT COUNT(*) AS total, SUM([Total cIVA]) AS totalImporteGlobal
-            FROM Dashboard_Ventas_Local ${whereStats}
-        `);
-        const total = Number(statsResult.recordset[0]?.total ?? 0);
-        const totalImporteGlobal = Number(statsResult.recordset[0]?.totalImporteGlobal ?? 0);
+        const incluirComparativo = q.incluirPeriodoAnterior === '1' && q.desde && q.hasta;
 
-        // ── Request para datos paginados ───────────────────────────────────
-        const dataReq = pool.request();
-        const whereData = buildWhere(dataReq, {
-            desde: q.desde, hasta: q.hasta,
-            medioPago: q.medioPago, familia: q.familia, categoria: q.categoria,
-            proveedor: q.proveedor,
-            sucursales: sucArray,
-        });
-        dataReq.input('offset', sql.Int, offset);
-        dataReq.input('limit', sql.Int, limit);
+        // ── Stats y datos según modo: normal o comparativo (desde_anterior hasta hasta) ──
+        let total: number;
+        let totalImporteGlobal: number;
+        let dataRows: any[];
 
-        const dataResult = await dataReq.query(`
-            SELECT ${VENTAS_COLUMNS}
-            FROM Dashboard_Ventas_Local
-            LEFT JOIN CTA_ARTICULO ON Dashboard_Ventas_Local.[Cód. Artículo] COLLATE DATABASE_DEFAULT = CTA_ARTICULO.COD_CTA_ARTICULO COLLATE DATABASE_DEFAULT
-            ${whereData}
-            ORDER BY Fecha DESC
-            OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
-        `);
+        if (incluirComparativo) {
+            const compReq = pool.request();
+            compReq.input('desde', sql.Date, q.desde);
+            compReq.input('hasta', sql.Date, q.hasta);
+            if (q.medioPago) { compReq.input('medioPago', sql.NVarChar, q.medioPago); }
+            if (q.familia) { compReq.input('familia', sql.NVarChar, q.familia); }
+            if (q.categoria) { compReq.input('categoria', sql.NVarChar, q.categoria); }
+            if (q.proveedor) { compReq.input('proveedor', sql.NVarChar, q.proveedor); }
+            const sucClauses: string[] = [];
+            if (sucArray.length === 1) {
+                compReq.input('sucursal0', sql.NVarChar, sucArray[0]);
+                sucClauses.push('[Nro. Sucursal] = @sucursal0');
+            } else if (sucArray.length > 1) {
+                sucArray.forEach((s, i) => compReq.input(`sucursal${i}`, sql.NVarChar, s));
+                sucClauses.push(`[Nro. Sucursal] IN (${sucArray.map((_, i) => `@sucursal${i}`).join(', ')})`);
+            }
+            const compWhere = [
+                'Fecha BETWEEN DATEADD(month, -1, @desde) AND @hasta',
+                ...(q.medioPago ? ['[Medio de Pago] = @medioPago'] : []),
+                ...(q.familia ? ['[Familia] = @familia'] : []),
+                ...(q.categoria ? ['[Categoria] = @categoria'] : []),
+                ...(q.proveedor ? ['[PROVEEDOR (Adic.)] = @proveedor'] : []),
+                ...sucClauses,
+            ].filter(Boolean).join(' AND ');
+            const compLimit = 5000;
+            compReq.input('compOffset', sql.Int, 0);
+            compReq.input('compLimit', sql.Int, compLimit);
 
-        console.log(`[RETAIL] /api/ventas page=${page} limit=${limit} → ${dataResult.recordset.length}/${total} ($${totalImporteGlobal.toFixed(0)})`);
+            const compResult = await compReq.query(`
+                SELECT ${VENTAS_COLUMNS},
+                    CASE WHEN Dashboard_Ventas_Local.Fecha >= @desde THEN 'actual' ELSE 'anterior' END AS periodo_comparativo
+                FROM Dashboard_Ventas_Local
+                LEFT JOIN CTA_ARTICULO ON Dashboard_Ventas_Local.[Cód. Artículo] COLLATE DATABASE_DEFAULT = CTA_ARTICULO.COD_CTA_ARTICULO COLLATE DATABASE_DEFAULT
+                WHERE ${compWhere}
+                ORDER BY Fecha DESC
+                OFFSET @compOffset ROWS FETCH NEXT @compLimit ROWS ONLY
+            `);
+            dataRows = compResult.recordset as any[];
+            // Diagnóstico: primeros 5 registros con periodo_comparativo
+            const sample = (dataRows as any[]).slice(0, 5);
+            const anteriorCount = (dataRows as any[]).filter((r: any) =>
+                (r.periodo_comparativo || r.periodo_Comparativo || r.PERIODO_COMPARATIVO) === 'anterior'
+            ).length;
+            console.log('[RETAIL] /api/ventas comparativo — sample:', JSON.stringify(sample.map((r: any) => ({
+                Fecha: r.Fecha,
+                'Nro. Sucursal': r['Nro. Sucursal'],
+                periodo_comparativo: r.periodo_comparativo ?? r.periodo_Comparativo ?? r.PERIODO_COMPARATIVO ?? '??',
+            })), null, 0));
+            console.log('[RETAIL] /api/ventas comparativo — filas con periodo=anterior:', anteriorCount, '/', dataRows.length);
+
+            const countReq = pool.request();
+            countReq.input('desde', sql.Date, q.desde);
+            countReq.input('hasta', sql.Date, q.hasta);
+            if (q.medioPago) countReq.input('medioPago', sql.NVarChar, q.medioPago);
+            if (q.familia) countReq.input('familia', sql.NVarChar, q.familia);
+            if (q.categoria) countReq.input('categoria', sql.NVarChar, q.categoria);
+            if (q.proveedor) countReq.input('proveedor', sql.NVarChar, q.proveedor);
+            if (sucArray.length === 1) countReq.input('sucursal0', sql.NVarChar, sucArray[0]);
+            else if (sucArray.length > 1) sucArray.forEach((s, i) => countReq.input(`sucursal${i}`, sql.NVarChar, s));
+            const countRes = await countReq.query(`
+                SELECT COUNT(*) AS total, SUM([Total cIVA]) AS totalImporteGlobal
+                FROM Dashboard_Ventas_Local
+                WHERE ${compWhere}
+            `);
+            total = Number(countRes.recordset[0]?.total ?? 0);
+            totalImporteGlobal = Number(countRes.recordset[0]?.totalImporteGlobal ?? 0);
+        } else {
+            const statsReq = pool.request();
+            const whereStats = buildWhere(statsReq, {
+                desde: q.desde, hasta: q.hasta,
+                medioPago: q.medioPago, familia: q.familia, categoria: q.categoria,
+                proveedor: q.proveedor,
+                sucursales: sucArray,
+            });
+            const statsResult = await statsReq.query(`
+                SELECT COUNT(*) AS total, SUM([Total cIVA]) AS totalImporteGlobal
+                FROM Dashboard_Ventas_Local ${whereStats}
+            `);
+            total = Number(statsResult.recordset[0]?.total ?? 0);
+            totalImporteGlobal = Number(statsResult.recordset[0]?.totalImporteGlobal ?? 0);
+
+            const dataReq = pool.request();
+            const whereData = buildWhere(dataReq, {
+                desde: q.desde, hasta: q.hasta,
+                medioPago: q.medioPago, familia: q.familia, categoria: q.categoria,
+                proveedor: q.proveedor,
+                sucursales: sucArray,
+            });
+            dataReq.input('offset', sql.Int, offset);
+            dataReq.input('limit', sql.Int, limit);
+
+            const dataResult = await dataReq.query(`
+                SELECT ${VENTAS_COLUMNS}
+                FROM Dashboard_Ventas_Local
+                LEFT JOIN CTA_ARTICULO ON Dashboard_Ventas_Local.[Cód. Artículo] COLLATE DATABASE_DEFAULT = CTA_ARTICULO.COD_CTA_ARTICULO COLLATE DATABASE_DEFAULT
+                ${whereData}
+                ORDER BY Fecha DESC
+                OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+            `);
+            dataRows = (dataResult.recordset as any[]).map(r => ({ ...r, periodo_comparativo: 'actual' }));
+        }
+
+        console.log(`[RETAIL] /api/ventas page=${page} limit=${limit} → ${dataRows.length}/${total} ($${totalImporteGlobal.toFixed(0)})${incluirComparativo ? ' [comparativo]' : ''}`);
+        if (incluirComparativo && dataRows.length > 0) {
+            console.log('[RETAIL] /api/ventas — payload sample (primeros 3):', JSON.stringify((dataRows as any[]).slice(0, 3).map((r: any) => ({
+                ...r,
+                periodo_comparativo: r.periodo_comparativo ?? r.periodo_Comparativo ?? '(no presente)',
+            })), null, 0).slice(0, 600));
+        }
         res.json({
-            data: dataResult.recordset,
+            data: dataRows,
             total,
             page,
             limit,
@@ -382,7 +464,7 @@ app.get('/api/dashboard', async (req, res) => {
         console.log(`[RETAIL] /api/dashboard: ${q.desde} → ${q.hasta}${q.medioPago ? ' mp=' + q.medioPago : ''}${sucArray.length ? ' suc=' + sucArray.join(',') : ''}`);
         const pool = await sql.connect(config);
 
-        const [kpisResult, sucursalResult] = await Promise.all([
+        const [kpisResult, sucursalResult, cobrosResult] = await Promise.all([
 
             // 1. KPIs globales
             (() => {
@@ -402,6 +484,16 @@ app.get('/api/dashboard', async (req, res) => {
                     GROUP BY [Nro. Sucursal]
                     ORDER BY monto DESC`);
             })(),
+
+            // 3. Cobros por Sucursal y Medio de Pago (para Resumen de Cobros)
+            (() => {
+                const r = pool.request();
+                const w = buildWhere(r, mkParams());
+                return r.query(`SELECT [Nro. Sucursal] AS nro_sucursal, [Medio de Pago] AS medio_pago, SUM([Total cIVA]) AS monto
+                    FROM Dashboard_Ventas_Local ${w}
+                    GROUP BY [Nro. Sucursal], [Medio de Pago]
+                    ORDER BY [Nro. Sucursal], monto DESC`);
+            })(),
         ]);
 
         const kpi = kpisResult.recordset[0] ?? {};
@@ -412,6 +504,12 @@ app.get('/api/dashboard', async (req, res) => {
             monto: Number(s.monto ?? 0),
         }));
 
+        const cobros_por_medio_sucursal = cobrosResult.recordset.map((r: any) => ({
+            nro_sucursal: String(r.nro_sucursal ?? ''),
+            medio_pago: String(r.medio_pago ?? ''),
+            monto: Number(r.monto ?? 0),
+        }));
+
         const payload = {
             kpis: {
                 totalFacturado: Number(kpi.totalFacturado ?? 0),
@@ -419,6 +517,7 @@ app.get('/api/dashboard', async (req, res) => {
                 voucherCount: Number(kpi.voucherCount ?? 0),
             },
             stacked_data,
+            cobros_por_medio_sucursal,
             top_articles: [],
             rubro_points: [],
         };

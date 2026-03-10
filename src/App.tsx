@@ -7,7 +7,7 @@ import { StockView } from './components/StockView';
 import { FilterSidebar } from './components/FilterSidebar';
 import { VentaRow, VentasFilters, DetailFilterOptions, getInitialFilters, DashboardMetrics } from './types';
 import {
-  fetchVentas, fetchVentasAgregadas, fetchVentasAgregadasPrevio, PAGE_SIZE,
+  fetchVentas, fetchVentasAgregadas, fetchVentasAgregadasPrevio, fetchVentasParaCobros, PAGE_SIZE, type VentasParaCobrosResult,
   fetchFilterOptions, getMediosPagoFromCache, fetchTopClientes, fetchCuotas,
   fetchTipos, fetchGeneros, fetchProveedores,
   DateRange,
@@ -37,6 +37,8 @@ export default function App() {
   // ── Data state ────────────────────────────────────────────────────────────
   const [dashData, setDashData] = useState<DashboardMetrics | null>(null);
   const [dashPrevData, setDashPrevData] = useState<DashboardMetrics | null>(null);
+  const [ventasParaCobros, setVentasParaCobros] = useState<VentaRow[]>([]);
+  const [ventasAnterior, setVentasAnterior] = useState<VentaRow[]>([]);
   const [tableData, setTableData] = useState<VentaRow[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [totalImporteGlobal, setTotalImporteGlobal] = useState(0);
@@ -133,13 +135,16 @@ export default function App() {
   const loadDashboardData = useCallback(async (f: VentasFilters) => {
     console.log('[App] loadDashboardData - Calling with:', f);
     try {
-      const [rows, prevRows] = await Promise.all([
+      const [rows, prevRows, ventasResult] = await Promise.all([
         fetchVentasAgregadas(f),
         fetchVentasAgregadasPrevio(f),
+        fetchVentasParaCobros(f), // Actual + anterior para gráfico comparativo
       ]);
-      console.log(`[App] loadDashboardData - Received aggregated data:`, rows.kpis);
+      console.log(`[App] loadDashboardData - Received aggregated data:`, rows.kpis, `ventas actual: ${ventasResult.actual.length}, anterior: ${ventasResult.anterior.length}`);
       setDashData(rows);
       setDashPrevData(prevRows);
+      setVentasParaCobros(ventasResult.actual);
+      setVentasAnterior(ventasResult.anterior);
       setError(null);
     } catch (e: any) {
       console.error('Dashboard error:', e);
@@ -252,7 +257,7 @@ export default function App() {
                     applyMode="manual"
                   />
                   <div className="flex-1 overflow-auto">
-                    <DashboardView data={dashData} prevData={dashPrevData} filters={dashFilters} isLoading={isLoading} />
+                    <DashboardView data={dashData} prevData={dashPrevData} filters={dashFilters} ventasParaCobros={ventasParaCobros} ventasAnterior={ventasAnterior} isLoading={isLoading} />
                   </div>
                 </div>
               </motion.div>

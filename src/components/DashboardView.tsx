@@ -1,12 +1,38 @@
 import React, { useMemo, useState } from 'react';
 import { StatsCard } from './StatsCard';
-import { PaymentMix, DashboardMetrics } from '../types';
+import { PaymentMix, DashboardMetrics, VentaRow } from '../types';
 import { Loader2 } from 'lucide-react';
+
+/** Categoriza el medio de pago para el Resumen de Cobros (mismo mapeo que Detalle) */
+const getCategoriaCobro = (item: VentaRow): string => {
+  const medio = String(item.medioPago ?? '').toUpperCase();
+  if (medio === 'CREDITO POR FINANCIERA' || (medio.includes('CREDITO') && medio.includes('FINANCIERA'))) return 'CREDITO POR FINANCIERA';
+  if (medio.startsWith('CAJA')) return 'EFECTIVO';
+  if (medio.startsWith('BANCO')) return 'TRANSFERENCIAS';
+  if (medio.includes('CREDITO EMPLEADO') || medio.includes('CTA. CTE.') || medio.includes('CUENTA CORRIENTE')) return 'CTA_CTE';
+  return 'TARJETA';
+};
+
+/** Orden fijo de categorías para la tabla */
+const CATEGORIAS_COBRO = ['EFECTIVO', 'TRANSFERENCIAS', 'TARJETA', 'CTA_CTE', 'CREDITO POR FINANCIERA'] as const;
+
+/** Colores por categoría para el gráfico de barras (sincronizado con Resumen de Cobros) */
+const COLORES_COBRO: Record<string, string> = {
+  EFECTIVO: '#10b981',
+  TRANSFERENCIAS: '#3b82f6',
+  TARJETA: '#f59e0b',
+  CTA_CTE: '#8b5cf6',
+  'CREDITO POR FINANCIERA': '#ec4899',
+};
 
 interface DashboardViewProps {
   data: DashboardMetrics | null;
   prevData: DashboardMetrics | null;
   filters: import('../types').Filters;
+  /** Ventas del Detalle (fetchVentas) — misma fuente que Detalle de Comprobantes para la matriz de cobros */
+  ventasParaCobros: VentaRow[];
+  /** Ventas del periodo anterior (mismo rango de días, mes previo) — para gráfico comparativo */
+  ventasAnterior: VentaRow[];
   isLoading: boolean;
 }
 
@@ -18,7 +44,7 @@ const CATEGORIAS = [
   { key: 'CUENTA CORRIENTE', color: '#8b5cf6', label: 'Cuenta Corriente' }, // violeta
 ];
 
-export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, filters, isLoading }) => {
+export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, filters, ventasParaCobros, ventasAnterior = [], isLoading }) => {
   const formatCurrency = (v: number) =>
     new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(v);
 
@@ -34,80 +60,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
     const ticketPromedio = voucherCount > 0 ? totalFacturado / voucherCount : 0;
     return { totalFacturado, margenTotal, rentabilidad, ticketPromedio };
   }, [data]);
-
-  /* ─── Helper: transforma data de RPC a formato de gráfico ─── */
-  const { stackedData, maxTotal } = useMemo(() => {
-    if (!data) return { stackedData: [], maxTotal: 1 };
-
-    // Agrupar por sucursal
-    const currMap = new Map<string, any>();
-    data.stacked_data.forEach(d => {
-      if (!currMap.has(d.nro_sucursal)) {
-        currMap.set(d.nro_sucursal, {
-          total: 0,
-          segments: CATEGORIAS.map(c => ({ ...c, amount: 0, breakdown: [] as [string, number][] }))
-        });
-      }
-      const branch = currMap.get(d.nro_sucursal)!;
-      branch.total += d.monto;
-      const segment = branch.segments.find((s: any) => s.key === d.categoria_negocio);
-      if (segment) {
-        segment.amount += d.monto;
-        segment.breakdown.push([d.medio_pago, d.monto]);
-      }
-    });
-
-    // Lo mismo para el período previo
-    const prevMap = new Map<string, any>();
-    if (prevData) {
-      prevData.stacked_data.forEach(d => {
-        if (!prevMap.has(d.nro_sucursal)) {
-          prevMap.set(d.nro_sucursal, {
-            total: 0,
-            segments: CATEGORIAS.map(c => ({ ...c, amount: 0, breakdown: [] as [string, number][] }))
-          });
-        }
-        const branch = prevMap.get(d.nro_sucursal)!;
-        branch.total += d.monto;
-        const segment = branch.segments.find((s: any) => s.key === d.categoria_negocio);
-        if (segment) {
-          segment.amount += d.monto;
-          segment.breakdown.push([d.medio_pago, d.monto]);
-        }
-      });
-    }
-
-    const allSucs = Array.from(new Set([...currMap.keys(), ...prevMap.keys()]));
-    const result = allSucs
-      .map(suc => ({
-        suc,
-        name: `Suc. ${suc}`,
-        curr: currMap.get(suc) ?? { total: 0, segments: CATEGORIAS.map(c => ({ ...c, amount: 0, breakdown: [] })) },
-        prev: prevMap.get(suc) ?? { total: 0, segments: CATEGORIAS.map(c => ({ ...c, amount: 0, breakdown: [] })) },
-      }))
-      .sort((a, b) => b.curr.total - a.curr.total);
-
-    const maxTotal = Math.max(
-      ...result.map(d => Math.max(d.curr.total, d.prev.total)),
-      1
-    );
-
-    return { stackedData: result, maxTotal };
-  }, [data, prevData]);
-
-  /* ─── Etiquetas de período para la leyenda / tooltip ─── */
-  const prevLabel = useMemo(() => {
-    if (!filters.fechaDesde) return 'Mes Anterior';
-    const d = new Date(`${filters.fechaDesde}T00:00:00Z`); // Usamos Z para precisión
-    d.setUTCMonth(d.getUTCMonth() - 1);
-    return d.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
-  }, [filters.fechaDesde]);
-
-  const currLabel = useMemo(() => {
-    if (!filters.fechaDesde) return 'Período Actual';
-    const d = new Date(`${filters.fechaDesde}T00:00:00Z`);
-    return d.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
-  }, [filters.fechaDesde]);
 
   /* ─── Mix de Pagos agrupado — 4 categorías fijas ─── */
   const paymentMix = useMemo(() => {
@@ -199,6 +151,102 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
     }).join(', ');
   }, [detailMix]);
 
+  /* ─── Resumen de Cobros por Sucursal — misma fuente que Detalle (VentaRow[]) ─── */
+  const cobrosMatrix = useMemo(() => {
+    if (!ventasParaCobros.length) return { categorias: [], sucursales: [], matrix: new Map<string, Map<string, number>>(), rowTotals: new Map<string, number>(), colTotals: new Map<string, number>(), grandTotal: 0 };
+
+    const matrix = new Map<string, Map<string, number>>();
+    const rowTotals = new Map<string, number>();
+    const colTotals = new Map<string, number>();
+    const sucursalesSet = new Set<string>();
+
+    ventasParaCobros.forEach((item: VentaRow) => {
+      const cat = getCategoriaCobro(item);
+      const suc = item.nro_sucursal;
+      const monto = Number(item.totalIVA ?? item.imp_prop_c_iva ?? item.importe_c_iva ?? 0);
+      sucursalesSet.add(suc);
+      if (!matrix.has(cat)) matrix.set(cat, new Map());
+      const row = matrix.get(cat)!;
+      row.set(suc, (row.get(suc) ?? 0) + monto);
+    });
+
+    const sucursales = Array.from(sucursalesSet).sort((a, b) => {
+      const na = parseInt(a, 10); const nb = parseInt(b, 10);
+      if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+      return String(a).localeCompare(String(b));
+    });
+    const categorias = CATEGORIAS_COBRO.filter(c => matrix.has(c));
+
+    categorias.forEach(cat => {
+      const row = matrix.get(cat)!;
+      let sum = 0;
+      sucursales.forEach(suc => {
+        const v = row.get(suc) ?? 0;
+        sum += v;
+        colTotals.set(suc, (colTotals.get(suc) ?? 0) + v);
+      });
+      rowTotals.set(cat, sum);
+    });
+
+    const grandTotal = Array.from(rowTotals.values()).reduce((a, b) => a + b, 0);
+
+    return { categorias, sucursales, matrix, rowTotals, colTotals, grandTotal };
+  }, [ventasParaCobros]);
+
+  /* ─── Totales por sucursal del periodo anterior (para gráfico comparativo) ─── */
+  const colTotalsAnterior = useMemo(() => {
+    const map = new Map<string, number>();
+    (ventasAnterior ?? []).forEach((item: VentaRow) => {
+      const suc = String(item.nro_sucursal ?? '').trim();
+      if (!suc) return;
+      const monto = Number(item.totalIVA ?? item.imp_prop_c_iva ?? item.importe_c_iva ?? 0);
+      map.set(suc, (map.get(suc) ?? 0) + monto);
+    });
+    const size = map.size;
+    const totalAnterior = [...map.values()].reduce((a, b) => a + b, 0);
+    if (size > 0) console.log('[DashboardView] colTotalsAnterior:', size, 'sucursales, total:', totalAnterior);
+    return map;
+  }, [ventasAnterior]);
+
+  /* ─── Ventas por Sucursal (gráfico) — actual + anterior, estructura { sucursal, actual, anterior } para Recharts ─── */
+  const ventasPorSucursalChart = useMemo(() => {
+    const { sucursales, categorias, matrix, colTotals } = cobrosMatrix;
+    const allSucs = Array.from(new Set([...sucursales, ...colTotalsAnterior.keys()])).sort((a, b) => {
+      const na = parseInt(a, 10); const nb = parseInt(b, 10);
+      if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+      return String(a).localeCompare(String(b));
+    });
+    if (allSucs.length === 0) return { bars: [], maxTotal: 1 };
+
+    const bars = allSucs.map(suc => {
+      const actual = colTotals.get(suc) ?? 0;
+      const anterior = colTotalsAnterior.get(suc) ?? 0;
+      const segments = categorias
+        .map(cat => ({
+          cat,
+          amount: matrix.get(cat)?.get(suc) ?? 0,
+          color: COLORES_COBRO[cat] ?? '#64748b',
+        }))
+        .filter(s => s.amount > 0);
+
+      return {
+        suc,
+        sucursal: `Suc. ${suc}`,
+        name: `Suc. ${suc}`,
+        actual,
+        anterior,
+        segments,
+      };
+    });
+
+    const maxTotal = Math.max(
+      ...bars.flatMap(b => [b.actual, b.anterior]),
+      1
+    );
+
+    return { bars, maxTotal };
+  }, [cobrosMatrix, colTotalsAnterior]);
+
   /* ─── Spinner overlay ──────────────────────────────── */
   const Spinner = () => (
     <div className="absolute inset-0 flex items-center justify-center z-30 bg-[#020617]/70 backdrop-blur-sm">
@@ -231,151 +279,134 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
               <span className="text-xs text-slate-400">Desglose por Medio de Pago</span>
             </div>
 
-            {stackedData.length === 0 ? (
+            {ventasPorSucursalChart.bars.length === 0 ? (
               <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">Sin datos para el período</div>
             ) : (() => {
-              // Altura fija del área de barras en píxeles — así los % internos se resuelven correctamente
               const BAR_AREA_H = 290;
+              const { bars, maxTotal } = ventasPorSucursalChart;
+              const COLOR_ACTUAL = '#1269e2';
+              const COLOR_ANTERIOR = '#64748b';
+
+              const renderBar = (
+                barH: number,
+                total: number,
+                isAnterior: boolean,
+                segments?: { cat: string; amount: number; color: string }[]
+              ) => {
+                if (barH === 0) return <div style={{ maxWidth: 34, width: 34 }} />;
+                const bg = isAnterior ? COLOR_ANTERIOR : undefined;
+                return (
+                  <div
+                    className="relative flex flex-col items-center group/bar"
+                    style={{ height: BAR_AREA_H, maxWidth: 34 }}
+                  >
+                    <span
+                      className={`text-[8px] whitespace-nowrap font-medium ${isAnterior ? 'text-slate-600' : 'text-slate-400'}`}
+                      style={{ marginBottom: BAR_AREA_H - barH + 2 }}
+                    >
+                      {fmtCompact(total)}
+                    </span>
+                    <div
+                      className={`relative w-full flex flex-col-reverse rounded-t-sm overflow-visible ${isAnterior ? 'opacity-70' : ''}`}
+                      style={{ height: barH }}
+                    >
+                      {isAnterior || !segments?.length ? (
+                        <div
+                          className="w-full h-full rounded-t-sm"
+                          style={{ backgroundColor: bg ?? COLOR_ACTUAL }}
+                        />
+                      ) : (
+                        segments.map((seg, si) => {
+                          if (seg.amount === 0) return null;
+                                const segH = total > 0 ? Math.max(Math.round((seg.amount / total) * barH), 2) : 0;
+                          return (
+                            <div
+                              key={si}
+                              className="relative w-full flex-shrink-0"
+                              style={{ height: segH, backgroundColor: seg.color }}
+                            />
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                );
+              };
+
               return (
                 <>
-                  {/* Área de barras con altura fija */}
                   <div
                     className="relative flex items-end justify-between gap-3 px-4"
                     style={{ height: BAR_AREA_H }}
                   >
-                    {/* Grid lines */}
                     <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
                       {[0, 1, 2, 3, 4].map(i => (
                         <div key={i} className="w-full h-px border-t border-dashed border-slate-800/80" />
                       ))}
                     </div>
 
-                    {stackedData.map((branch, bi) => {
-                      const currH = Math.max(Math.round((branch.curr.total / maxTotal) * BAR_AREA_H), branch.curr.total > 0 ? 4 : 0);
-                      const prevH = Math.max(Math.round((branch.prev.total / maxTotal) * BAR_AREA_H), branch.prev.total > 0 ? 4 : 0);
-                      const pct = branch.prev.total > 0
-                        ? ((branch.curr.total - branch.prev.total) / branch.prev.total) * 100
+                    {bars.map((branch, bi) => {
+                      const hActual = Math.max(Math.round((branch.actual / maxTotal) * BAR_AREA_H), branch.actual > 0 ? 4 : 0);
+                      const hAnterior = Math.max(Math.round((branch.anterior / maxTotal) * BAR_AREA_H), branch.anterior > 0 ? 4 : 0);
+                      const pctVar = branch.anterior > 0
+                        ? ((branch.actual - branch.anterior) / branch.anterior) * 100
                         : null;
 
-                      /** Renders one stacked bar (prev or curr) */
-                      const renderBar = (
-                        barH: number,
-                        segments: typeof branch.curr.segments,
-                        total: number,
-                        isPrev: boolean,
-                        periodLabel: string
-                      ) => {
-                        if (barH === 0) return <div style={{ maxWidth: 34, width: 34 }} />;
-                        return (
-                          <div
-                            className="relative flex flex-col items-center"
-                            style={{ height: BAR_AREA_H, maxWidth: 34 }}
-                          >
-                            {/* Total label */}
-                            <span
-                              className={`text-[8px] whitespace-nowrap font-medium ${isPrev ? 'text-slate-600' : 'text-slate-400'}`}
-                              style={{ marginBottom: BAR_AREA_H - barH + 2 }}
-                            >
-                              {fmtCompact(total)}
-                            </span>
-                            {/* Stacked bar */}
-                            <div
-                              className={`relative w-full flex flex-col-reverse rounded-t-sm overflow-visible ${isPrev ? 'opacity-50' : ''}`}
-                              style={{ height: barH }}
-                            >
-                              {segments.map((seg, si) => {
-                                if (seg.amount === 0) return null;
-                                const segH = Math.max(Math.round((seg.amount / total) * barH), 2);
-                                return (
-                                  <div
-                                    key={si}
-                                    className="relative group/seg w-full"
-                                    style={{ height: segH, backgroundColor: seg.color, flexShrink: 0 }}
-                                  >
-                                    {/* Tooltip */}
-                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/seg:flex flex-col items-center z-30 pointer-events-none">
-                                      <div className="bg-slate-900 border border-slate-700 text-white text-[10px] py-2 px-3 rounded shadow-xl whitespace-nowrap min-w-[170px]">
-                                        {/* Período */}
-                                        <div className={`text-[9px] mb-1 font-medium ${isPrev ? 'text-slate-400' : 'text-sky-400'}`}>
-                                          {isPrev ? '◀ ' : '▶ '}{periodLabel}
-                                        </div>
-                                        {/* Categoría + monto */}
-                                        <div className="flex items-center gap-1.5 mb-1">
-                                          <span className="size-2 rounded-sm shrink-0" style={{ backgroundColor: seg.color }} />
-                                          <span className="font-semibold">{seg.label}</span>
-                                        </div>
-                                        <span className="text-emerald-400 font-medium block mb-1">
-                                          {fmtFull(seg.amount)}
-                                        </span>
-                                        {/* Desglose de medios */}
-                                        {seg.breakdown.length > 1 && (
-                                          <div className="border-t border-slate-700 pt-1 mt-0.5 flex flex-col gap-0.5">
-                                            {seg.breakdown.slice(0, 3).map(([medio, monto], mi) => (
-                                              <div key={mi} className="flex justify-between gap-3 text-slate-400">
-                                                <span className="truncate max-w-[100px]">{medio}</span>
-                                                <span className="font-mono">{fmtCompact(monto)}</span>
-                                              </div>
-                                            ))}
-                                            {seg.breakdown.length > 3 && <span className="text-slate-500">+{seg.breakdown.length - 3} más</span>}
-                                          </div>
-                                        )}
-                                        {/* % variación (solo barra actual) */}
-                                        {!isPrev && pct !== null && (
-                                          <div className={`border-t border-slate-700 pt-1 mt-1 flex items-center gap-1 font-semibold ${pct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                            <span>{pct >= 0 ? '▲' : '▼'}</span>
-                                            <span>{Math.abs(pct).toFixed(1)}% vs {prevLabel}</span>
-                                          </div>
-                                        )}
-                                      </div>
-                                      <div className="size-1.5 bg-slate-900 rotate-45 -mt-1 border-r border-b border-slate-700" />
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      };
-
                       return (
-                        <div key={bi} className="flex flex-col flex-1 min-w-0 z-10">
-                          {/* Par de barras */}
+                        <div key={bi} className="relative flex flex-col flex-1 min-w-0 z-10 items-center group/suc">
                           <div className="flex items-end justify-center gap-2 w-full">
-                            {renderBar(prevH, branch.prev.segments, branch.prev.total, true, prevLabel)}
-                            {renderBar(currH, branch.curr.segments, branch.curr.total, false, currLabel)}
+                            {renderBar(hAnterior, branch.anterior, true)}
+                            {renderBar(hActual, branch.actual, false, branch.segments)}
+                          </div>
+                          {/* Tooltip con ambos valores y variación */}
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/suc:flex flex-col items-center z-30 pointer-events-none">
+                            <div className="bg-slate-900 border border-slate-700 text-white text-[10px] py-2 px-3 rounded shadow-xl whitespace-nowrap min-w-[160px]">
+                              <div className="font-semibold text-slate-200 mb-1.5">{branch.name}</div>
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <span className="size-2 rounded-sm shrink-0" style={{ backgroundColor: COLOR_ACTUAL }} />
+                                <span className="text-slate-400">Mes Actual:</span>
+                                <span className="text-emerald-400 font-medium">{fmtFull(branch.actual)}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <span className="size-2 rounded-sm shrink-0" style={{ backgroundColor: COLOR_ANTERIOR }} />
+                                <span className="text-slate-400">Mes Anterior:</span>
+                                <span className="text-slate-300">{fmtFull(branch.anterior)}</span>
+                              </div>
+                              {pctVar !== null && (
+                                <div className={`border-t border-slate-700 pt-1 mt-1 font-semibold ${pctVar >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {pctVar >= 0 ? '▲' : '▼'} {Math.abs(pctVar).toFixed(1)}% vs mes anterior
+                                </div>
+                              )}
+                            </div>
+                            <div className="size-1.5 bg-slate-900 rotate-45 -mt-1 border-r border-b border-slate-700" />
                           </div>
                         </div>
                       );
                     })}
                   </div>
 
-                  {/* Etiquetas de sucursal */}
                   <div className="flex justify-between gap-4 px-2 mt-2">
-                    {stackedData.map((branch, bi) => (
+                    {bars.map((branch, bi) => (
                       <span key={bi} className="flex-1 text-[10px] text-slate-400 font-medium truncate text-center">
                         {branch.name}
                       </span>
                     ))}
                   </div>
 
-                  {/* Leyenda dual */}
                   <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 pt-3 border-t border-slate-800">
-                    {/* Período */}
                     <div className="flex items-center gap-1.5">
-                      <span className="w-5 h-2.5 rounded-sm bg-emerald-500 opacity-50 shrink-0" />
-                      <span className="text-[10px] text-slate-500 whitespace-nowrap capitalize">{prevLabel}</span>
+                      <span className="w-5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: COLOR_ANTERIOR }} />
+                      <span className="text-[10px] text-slate-500">Mes Anterior</span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <span className="w-5 h-2.5 rounded-sm bg-emerald-500 shrink-0" />
-                      <span className="text-[10px] text-slate-300 font-medium whitespace-nowrap capitalize">{currLabel}</span>
+                      <span className="w-5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: COLOR_ACTUAL }} />
+                      <span className="text-[10px] text-slate-300 font-medium">Mes Actual</span>
                     </div>
-                    {/* Separador */}
                     <span className="text-slate-700">|</span>
-                    {/* 4 categorías */}
-                    {CATEGORIAS.map(cat => (
-                      <div key={cat.key} className="flex items-center gap-1.5">
-                        <span className="size-2 rounded-sm shrink-0" style={{ backgroundColor: cat.color }} />
-                        <span className="text-[10px] text-slate-400 whitespace-nowrap">{cat.label}</span>
+                    {cobrosMatrix.categorias.map(cat => (
+                      <div key={cat} className="flex items-center gap-1.5">
+                        <span className="size-2 rounded-sm shrink-0" style={{ backgroundColor: COLORES_COBRO[cat] ?? '#64748b' }} />
+                        <span className="text-[10px] text-slate-400 whitespace-nowrap">{cat.replace(/_/g, ' ')}</span>
                       </div>
                     ))}
                   </div>
@@ -499,6 +530,57 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
               </div>
 
             </div>
+          </div>
+        </div>
+
+        {/* Resumen de Cobros por Sucursal — misma fuente que Detalle de Comprobantes */}
+        <div className="bg-card-dark rounded-xl border border-border-dark shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-border-dark">
+            <h3 className="text-lg font-semibold text-white">Resumen de Cobros por Sucursal</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Total cIVA por categoría de medio de pago y sucursal</p>
+          </div>
+          <div className="overflow-x-auto">
+            {cobrosMatrix.categorias.length === 0 ? (
+              <div className="px-6 py-12 text-center text-slate-500 text-sm">Sin datos para el período</div>
+            ) : (
+              <table className="w-full text-sm border-collapse">
+                <thead className="bg-[#0f172a] text-xs uppercase font-semibold text-slate-300 sticky top-0 z-20 border-b border-border-dark">
+                  <tr>
+                    <th className="px-4 py-3.5 text-left tracking-wide whitespace-nowrap">Categoría</th>
+                    {cobrosMatrix.sucursales.map(suc => (
+                      <th key={suc} className="px-4 py-3.5 text-right tracking-wide whitespace-nowrap">Suc. {suc}</th>
+                    ))}
+                    <th className="px-4 py-3.5 text-right tracking-wide whitespace-nowrap border-l border-border-dark text-primary">TOTALES</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border-dark bg-[#020617]">
+                  {cobrosMatrix.categorias.map(cat => (
+                    <tr key={cat} className="hover:bg-slate-800/40 transition-colors border-b border-border-dark">
+                      <td className="px-4 py-3 font-medium text-slate-200 whitespace-nowrap">{cat.replace(/_/g, ' ')}</td>
+                      {cobrosMatrix.sucursales.map(suc => (
+                        <td key={suc} className="px-4 py-3 text-right text-slate-400 tabular-nums">
+                          {formatCurrency(cobrosMatrix.matrix.get(cat)?.get(suc) ?? 0)}
+                        </td>
+                      ))}
+                      <td className="px-4 py-3 text-right font-semibold text-white tabular-nums border-l border-border-dark">
+                        {formatCurrency(cobrosMatrix.rowTotals.get(cat) ?? 0)}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="bg-[#0f172a]/90 font-semibold border-t-2 border-primary/30">
+                    <td className="px-4 py-3.5 text-slate-200 whitespace-nowrap">TOTALES</td>
+                    {cobrosMatrix.sucursales.map(suc => (
+                      <td key={suc} className="px-4 py-3.5 text-right text-white tabular-nums">
+                        {formatCurrency(cobrosMatrix.colTotals.get(suc) ?? 0)}
+                      </td>
+                    ))}
+                    <td className="px-4 py-3.5 text-right font-bold text-primary tabular-nums border-l border-border-dark">
+                      {formatCurrency(cobrosMatrix.grandTotal)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>

@@ -239,6 +239,13 @@ export interface StackedDataPoint {
   monto: number;
 }
 
+/** Fila para Resumen de Cobros: monto por sucursal y medio de pago */
+export interface CobroPorMedioSucursal {
+  nro_sucursal: string;
+  medio_pago: string;
+  monto: number;
+}
+
 export interface TopArticle {
   cod_articu: string;
   descripcio: string;
@@ -250,6 +257,7 @@ export interface TopArticle {
 export interface DashboardMetrics {
   kpis: DashboardKPIs;
   stacked_data: StackedDataPoint[];
+  cobros_por_medio_sucursal?: CobroPorMedioSucursal[];
   top_articles: TopArticle[];
   rubro_points: RubroPoint[];
   rows_count?: number;
