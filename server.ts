@@ -382,7 +382,7 @@ app.get('/api/dashboard', async (req, res) => {
         console.log(`[RETAIL] /api/dashboard: ${q.desde} → ${q.hasta}${q.medioPago ? ' mp=' + q.medioPago : ''}${sucArray.length ? ' suc=' + sucArray.join(',') : ''}`);
         const pool = await sql.connect(config);
 
-        const [kpisResult, sucursalResult, articulosResult, rubrosResult] = await Promise.all([
+        const [kpisResult, sucursalResult] = await Promise.all([
 
             // 1. KPIs globales
             (() => {
@@ -402,29 +402,6 @@ app.get('/api/dashboard', async (req, res) => {
                     GROUP BY [Nro. Sucursal]
                     ORDER BY monto DESC`);
             })(),
-
-            // 3. Top 10 Artículos
-            (() => {
-                const r = pool.request();
-                const w = buildWhere(r, mkParams());
-                return r.query(`SELECT TOP 10 [Cód. Artículo] AS cod_articu,
-                       MAX([Descripción]) AS descripcio,
-                       SUM([Total cIVA])  AS total, SUM([Cantidad]) AS cant
-                    FROM Dashboard_Ventas_Local ${w}
-                    GROUP BY [Cód. Artículo]
-                    ORDER BY total DESC`);
-            })(),
-
-            // 4. Dispersión por Rubro
-            (() => {
-                const r = pool.request();
-                const w = buildWhere(r, mkParams());
-                return r.query(`SELECT ISNULL([Familia], 'Otros') AS rubro,
-                       SUM([Cantidad]) AS total_cantidad, 0 AS avg_margen
-                    FROM Dashboard_Ventas_Local ${w}
-                    GROUP BY [Familia]
-                    ORDER BY total_cantidad DESC`);
-            })(),
         ]);
 
         const kpi = kpisResult.recordset[0] ?? {};
@@ -434,13 +411,6 @@ app.get('/api/dashboard', async (req, res) => {
             medio_pago: q.medioPago ?? 'Todos',
             monto: Number(s.monto ?? 0),
         }));
-        const top_articles = articulosResult.recordset.map((r: any) => ({
-            cod_articu: r.cod_articu ?? '', descripcio: r.descripcio ?? '',
-            total: Number(r.total ?? 0), cant: Number(r.cant ?? 0), margen: 0,
-        }));
-        const rubro_points = rubrosResult.recordset.map((r: any) => ({
-            rubro: r.rubro ?? 'Otros', total_cantidad: Number(r.total_cantidad ?? 0), avg_margen: 0,
-        }));
 
         const payload = {
             kpis: {
@@ -448,7 +418,9 @@ app.get('/api/dashboard', async (req, res) => {
                 margenTotal: 0, rentabilidad: 0,
                 voucherCount: Number(kpi.voucherCount ?? 0),
             },
-            stacked_data, top_articles, rubro_points,
+            stacked_data,
+            top_articles: [],
+            rubro_points: [],
         };
         console.log(`[RETAIL] /api/dashboard: $${payload.kpis.totalFacturado.toFixed(0)}, suc=${sucursalResult.recordset.length}`);
         res.json(payload);

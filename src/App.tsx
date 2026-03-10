@@ -248,6 +248,8 @@ export default function App() {
                     onFiltersChange={setDashFilters}
                     options={dashOptionsEfectivas}
                     isLoadingOptions={isLoadingDashOptions}
+                    isLoading={isLoading}
+                    applyMode="manual"
                   />
                   <div className="flex-1 overflow-auto">
                     <DashboardView data={dashData} prevData={dashPrevData} filters={dashFilters} isLoading={isLoading} />
@@ -272,6 +274,8 @@ export default function App() {
                   onFiltersChange={setDetailFilters}
                   options={detailOptionsEfectivas}
                   isLoadingOptions={isLoadingDetailOptions}
+                  isLoading={isLoading}
+                  applyMode="manual"
                 />
 
                 {/* Table + pagination */}

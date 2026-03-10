@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { StatsCard } from './StatsCard';
-import { VentaRow, PaymentMix, RubroPoint, DashboardMetrics } from '../types';
-import { MoreHorizontal, Loader2 } from 'lucide-react';
+import { PaymentMix, DashboardMetrics } from '../types';
+import { Loader2 } from 'lucide-react';
 
 interface DashboardViewProps {
   data: DashboardMetrics | null;
@@ -109,8 +109,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
     return d.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
   }, [filters.fechaDesde]);
 
-  const BAR_AREA_H = 240;
-
   /* ─── Mix de Pagos agrupado — 4 categorías fijas ─── */
   const paymentMix = useMemo(() => {
     if (!data) return [];
@@ -201,20 +199,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
     }).join(', ');
   }, [detailMix]);
 
-  /* ─── Top 5 Artículos ──────────────────────────────── */
-  const topArticulos = useMemo(() => {
-    return data?.top_articles ?? [];
-  }, [data]);
-
-  /* ─── Dispersión Rentabilidad por Rubro ────────────── */
-  const rubroPoints = useMemo(() => {
-    return data?.rubro_points ?? [];
-  }, [data]);
-
-  const maxCant = rubroPoints.reduce((m, p) => Math.max(m, p.total_cantidad ?? 0), 1);
-  const maxMargen = rubroPoints.reduce((m, p) => Math.max(m, p.avg_margen ?? 0), 1);
-  const minMargen = rubroPoints.reduce((m, p) => Math.min(m, p.avg_margen ?? 0), 0);
-
   /* ─── Spinner overlay ──────────────────────────────── */
   const Spinner = () => (
     <div className="absolute inset-0 flex items-center justify-center z-30 bg-[#020617]/70 backdrop-blur-sm">
@@ -238,8 +222,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
           <StatsCard title="Ticket Promedio" value={formatCurrency(stats.ticketPromedio)} trend={0} subtitle="Facturado / Comprobantes" icon="ticket" />
         </div>
 
-        {/* Charts Row */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6" style={{ gridTemplateColumns: '5fr 6fr', height: 480 }}>
+        {/* Charts Row — Ventas por Sucursal + Mix de Pagos */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6" style={{ gridTemplateColumns: '1fr 1fr', minHeight: 520 }}>
           {/* Stacked Bar Chart — Ventas por Sucursal × Medio de Pago */}
           <div className="bg-card-dark rounded-xl border border-border-dark p-5 flex flex-col shadow-sm">
             <div className="flex items-center justify-between mb-4">
@@ -514,92 +498,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
                 )}
               </div>
 
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Top Articles */}
-          <div className="lg:col-span-2 bg-card-dark rounded-xl border border-border-dark shadow-sm overflow-hidden flex flex-col">
-            <div className="p-6 border-b border-border-dark flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-white">Top 5 Artículos</h3>
-              <button className="text-xs text-primary font-medium hover:underline">Ver Todos</button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm text-slate-400">
-                <thead className="bg-[#111418] text-xs uppercase font-medium text-slate-300">
-                  <tr>
-                    <th className="px-6 py-3">#</th>
-                    <th className="px-6 py-3">Descripción</th>
-                    <th className="px-6 py-3 text-right">Cantidad</th>
-                    <th className="px-6 py-3 text-right">Rent. %</th>
-                    <th className="px-6 py-3 text-right">Venta Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border-dark">
-                  {topArticulos.length === 0 ? (
-                    <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500">Sin datos para el período seleccionado</td></tr>
-                  ) : topArticulos.map((item, i) => (
-                    <tr key={i} className="hover:bg-slate-800/50 transition-colors">
-                      <td className="px-6 py-4 font-medium text-white">{String(i + 1).padStart(2, '0')}</td>
-                      <td className="px-6 py-4 flex items-center gap-3">
-                        <div
-                          className="size-8 rounded bg-slate-700 bg-cover bg-center shrink-0"
-                          style={{ backgroundImage: `url(https://picsum.photos/seed/${item.cod_articu}/100/100)` }}
-                        />
-                        <span className="font-medium text-white truncate max-w-[200px]">{item.descripcio}</span>
-                      </td>
-                      <td className="px-6 py-4 text-right">{(item.cant ?? 0).toFixed(0)}</td>
-                      <td className={`px-6 py-4 text-right font-medium ${(item.margen ?? 0) >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                        {(item.margen ?? 0).toFixed(1)}%
-                      </td>
-                      <td className="px-6 py-4 text-right text-white">{formatCurrency(item.total)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Dispersión Rentabilidad por Rubro */}
-          <div className="bg-card-dark rounded-xl border border-border-dark p-6 flex flex-col shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">Dispersión Rentabilidad</h3>
-              <button className="text-slate-400 hover:text-white"><MoreHorizontal size={20} /></button>
-            </div>
-            <p className="text-xs text-slate-500 mb-6">Rubros: Margen % vs Cantidad</p>
-            <div className="flex-1 relative border-l border-b border-slate-700 mx-2 mb-2 min-h-[250px]">
-              <span className="absolute -left-6 top-0 bottom-0 m-auto h-4 w-20 -rotate-90 text-[10px] text-slate-500 text-center">Margen %</span>
-              <span className="absolute left-0 right-0 -bottom-6 m-auto h-4 text-[10px] text-slate-500 text-center">Cantidad</span>
-              {[25, 50, 75].map(pct => (
-                <div key={pct} className="absolute w-full h-px bg-slate-800 border-t border-dashed border-slate-700/50" style={{ top: `${pct}%` }} />
-              ))}
-              {rubroPoints.map((pt, i) => {
-                const range = maxMargen - minMargen || 1;
-                const left = (pt.total_cantidad / maxCant) * 88 + 5;
-                const bottom = ((pt.avg_margen - minMargen) / range) * 80 + 10;
-                const size = Math.max(8, Math.min(22, (pt.total_cantidad / maxCant) * 20 + 8));
-                return (
-                  <div
-                    key={i}
-                    className="absolute group"
-                    style={{ left: `${left}%`, bottom: `${bottom}%` }}
-                  >
-                    <div
-                      className="rounded-full border-2 border-white shadow-lg cursor-pointer hover:scale-125 transition-transform"
-                      style={{
-                        width: size,
-                        height: size,
-                        backgroundColor: ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#f43f5e', '#06b6d4'][i % 6],
-                      }}
-                    />
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-slate-900 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20 pointer-events-none border border-slate-700">
-                      {pt.rubro}: {(pt.avg_margen ?? 0).toFixed(1)}%
-                    </div>
-                  </div>
-                );
-              })}
             </div>
           </div>
         </div>

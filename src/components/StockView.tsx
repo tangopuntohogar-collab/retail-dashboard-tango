@@ -83,6 +83,8 @@ export const StockView: React.FC = () => {
         onFiltersChange={setFilters}
         options={stockOptions}
         isLoadingOptions={isLoading}
+        isLoading={isLoading}
+        applyMode="manual"
         hideDateRange={false}
         view="stock"
       />
