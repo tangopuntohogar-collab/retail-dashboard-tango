@@ -12,7 +12,7 @@ export const StockView: React.FC = () => {
   const loadStock = async () => {
     setIsLoading(true);
     try {
-      const stock = await fetchStock(filters.sucursales);
+      const stock = await fetchStock(filters);
       setRawData(stock);
     } catch (e) {
       console.error('Error loading stock:', e);
@@ -23,7 +23,7 @@ export const StockView: React.FC = () => {
 
   useEffect(() => {
     loadStock();
-  }, [filters.sucursales]);
+  }, [filters.sucursales, filters.fechaDesde, filters.fechaHasta]);
 
   // ── Extraer opciones únicas del inventario cargado ──────────────────────────
   const stockOptions = useMemo((): DetailFilterOptions => {

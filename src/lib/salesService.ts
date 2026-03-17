@@ -2,6 +2,7 @@ import { VentaRow, VentasFilters, DashboardMetrics, DashboardKPIs, StackedDataPo
 
 
 const API_URL = import.meta.env.VITE_API_URL;
+console.log('[Network] API Base URL:', API_URL);
 
 /** Límite de filas para el detalle de grilla (Frontend) */
 export const PAGE_SIZE = 500;
@@ -97,7 +98,7 @@ async function getAllVentas(desde?: string, hasta?: string): Promise<VentaRow[]>
         params.set('limit', '5000');
         params.set('page', '0');
 
-        const url = `${API_URL}?${params}`;
+        const url = `${API_URL}/ventas?${params}`;
         console.log('[salesService] Cache fill:', url);
         const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
@@ -167,7 +168,7 @@ export async function fetchVentas(
     params.set('limit', String(PAGE_SIZE));
 
     try {
-        const url = `${API_URL}?${params}`;
+        const url = `${API_URL}/ventas?${params}`;
         console.log('[salesService] fetchVentas:', url);
         const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
@@ -226,7 +227,7 @@ export async function fetchVentasParaCobros(filters: VentasFilters): Promise<Ven
     if (filters.fechaDesde && filters.fechaHasta) params.set('incluirPeriodoAnterior', '1');
 
     try {
-        const url = `${API_URL}?${params}`;
+        const url = `${API_URL}/ventas?${params}`;
         const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
         const json = await response.json();
@@ -234,7 +235,7 @@ export async function fetchVentasParaCobros(filters: VentasFilters): Promise<Ven
         const getPeriodo = (r: any) => (r.periodo_comparativo ?? r.periodo_Comparativo ?? r.PERIODO_COMPARATIVO ?? 'actual').toString().toLowerCase();
         const rawActual = raw.filter((r: any) => getPeriodo(r) === 'actual');
         const rawAnterior = raw.filter((r: any) => getPeriodo(r) === 'anterior');
-        console.log('[salesService] fetchVentasParaCobros - raw:', raw.length, '| actual:', rawActual.length, '| anterior:', rawAnterior.length);
+        console.log('[salesService] fetchVentasParaCobros - total:', raw.length, '| actual:', rawActual.length, '| anterior:', rawAnterior.length);
         const serverFiltered = {
             ...filters,
             sucursales: [] as string[],
@@ -261,8 +262,7 @@ export async function fetchVentasParaCobros(filters: VentasFilters): Promise<Ven
  */
 export async function fetchSaldosCajas(): Promise<SaldoCajaRow[]> {
     try {
-        const baseUrl = API_URL.replace('/api/ventas', '');
-        const url = `${baseUrl}/api/saldos-cajas`;
+        const url = `${API_URL}/saldos-cajas`;
         const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
         const raw: any[] = await response.json();
@@ -292,15 +292,14 @@ export async function fetchVentasStats(filters: VentasFilters): Promise<{
     fechaMin: string | null;
     fechaMax: string | null;
 }> {
-    const baseUrl = API_URL.replace('/api/ventas', '');
     const params = new URLSearchParams();
     if (filters.fechaDesde) params.set('desde', filters.fechaDesde);
     if (filters.fechaHasta) params.set('hasta', filters.fechaHasta);
     if (filters.mediosPago?.length === 1) params.set('medioPago', filters.mediosPago[0]);
     if (filters.familias?.length === 1) params.set('familia', filters.familias[0]);
     if (filters.categorias?.length === 1) params.set('categoria', filters.categorias[0]);
-
-    const url = `${baseUrl}/api/ventas/stats?${params}`;
+    
+    const url = `${API_URL}/ventas/stats?${params}`;
     console.log('[salesService] fetchVentasStats:', url);
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
@@ -314,7 +313,6 @@ export async function fetchVentasStats(filters: VentasFilters): Promise<{
  */
 export async function fetchVentasAgregadas(filters: VentasFilters): Promise<DashboardMetrics> {
     try {
-        const baseUrl = API_URL.replace('/api/ventas', '');
         const params = new URLSearchParams();
         if (filters.fechaDesde) params.set('desde', filters.fechaDesde);
         if (filters.fechaHasta) params.set('hasta', filters.fechaHasta);
@@ -324,7 +322,7 @@ export async function fetchVentasAgregadas(filters: VentasFilters): Promise<Dash
         if (filters.categorias?.length === 1) params.set('categoria', filters.categorias[0]);
         if (filters.proveedores?.length === 1) params.set('proveedor', filters.proveedores[0]);
 
-        const url = `${baseUrl}/api/dashboard?${params}`;
+        const url = `${API_URL}/dashboard?${params}`;
         console.log('[salesService] Dashboard fetch:', url);
         const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
@@ -436,11 +434,10 @@ export async function fetchRubros(range: DateRange): Promise<string[]> {
 export async function fetchFilterOptions(range: DateRange): Promise<{
     mediosPago: string[]; familias: string[]; categorias: string[]; sucursales: string[];
 }> {
-    const baseUrl = API_URL.replace('/api/ventas', '');
     const params = new URLSearchParams();
     if (range.fechaDesde) params.set('desde', range.fechaDesde);
     if (range.fechaHasta) params.set('hasta', range.fechaHasta);
-    const url = `${baseUrl}/api/ventas/options?${params}`;
+    const url = `${API_URL}/ventas/options?${params}`;
     console.log('[salesService] fetchFilterOptions:', url);
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP Error ${response.status}`);

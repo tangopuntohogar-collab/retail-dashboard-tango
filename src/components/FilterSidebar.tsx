@@ -185,7 +185,7 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
     const asVentas = tempFilters as VentasFilters;
     const isManual = applyMode === 'manual';
 
-    const [collapsed, setCollapsed] = useState(false);
+    const [isOpen, setIsOpen] = useState(false);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const tempFiltersRef = useRef(tempFilters);
     tempFiltersRef.current = tempFilters;
@@ -284,12 +284,11 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
         if (!isManual) onFiltersChange(updated as VentasFilters);
     }, [tempFilters, onFiltersChange, isManual]);
 
-    // ── Collapsed ─────────────────────────────────────────────────────────────
-    if (collapsed) {
+    if (!isOpen) {
         return (
             <aside className="h-full flex flex-col items-center py-4 gap-4 bg-[#080e18] border-r border-slate-800 w-12 shrink-0 z-10">
                 <button
-                    onClick={() => setCollapsed(false)}
+                    onClick={() => setIsOpen(true)}
                     className="text-slate-400 hover:text-white transition-colors p-1 rounded"
                     title="Expandir filtros"
                 >
@@ -324,7 +323,7 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
                     }
                 </div>
                 <button
-                    onClick={() => setCollapsed(true)}
+                    onClick={() => setIsOpen(false)}
                     className="text-slate-500 hover:text-white transition-colors p-1 rounded"
                     title="Colapsar"
                 >

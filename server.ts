@@ -10,14 +10,14 @@ app.use(express.json());
 const config: any = {
     user: 'Axoft',
     password: 'Axoft',
-    server: 'INFOSYS01',
+    server: 'SERVIDORT',
     database: 'PUNTO_HOGAR_1',
     requestTimeout: 60000,   // 60s — queries sobre 108k filas pueden tardar
     connectionTimeout: 30000,   // 30s — primera conexión al servidor remoto
     options: {
         encrypt: false,
         trustServerCertificate: true,
-        instanceName: 'AXSQLSERVER'
+        instanceName: 'AXSQLEXPRESS'
     }
 };
 
@@ -396,7 +396,7 @@ app.get('/api/saldos-cajas', async (req, res) => {
                     T.COD_CTA_CUENTA_TESORERIA AS [COD. CUENTA],
                     T.DESC_CTA_CUENTA_TESORERIA AS [DESC. CUENTA],
                     ST.SALDO_CORRIENTE AS [SALDO],
-                    ST.FECHA_IMPORTACION AS [FECHA_ACTUALIZACION],
+                    CONVERT(VARCHAR(10), ST.FECHA_IMPORTACION, 120) AS [FECHA_ACTUALIZACION],
                     ROW_NUMBER() OVER (PARTITION BY S.NRO_SUCURSAL, T.COD_CTA_CUENTA_TESORERIA ORDER BY ST.FECHA_IMPORTACION DESC) as rn
                 FROM CTA_SALDO_CUENTA_TESORERIA ST
                 LEFT JOIN CTA_CUENTA_TESORERIA T ON T.ID_CTA_CUENTA_TESORERIA = ST.ID_CTA_CUENTA_TESORERIA
@@ -408,6 +408,7 @@ app.get('/api/saldos-cajas', async (req, res) => {
                    OR (S.NRO_SUCURSAL = 1014 AND T.COD_CTA_CUENTA_TESORERIA = 11040)
                    OR (S.NRO_SUCURSAL = 1018 AND T.COD_CTA_CUENTA_TESORERIA = 11070)
                    OR (S.NRO_SUCURSAL = 1019 AND T.COD_CTA_CUENTA_TESORERIA = 11060)
+                   OR (S.NRO_SUCURSAL = 1015 AND T.COD_CTA_CUENTA_TESORERIA = 11030)
             )
             SELECT [NRO. SUCURSAL], [COD. CUENTA], [DESC. CUENTA], [SALDO], [FECHA_ACTUALIZACION]
             FROM UltimosSaldos WHERE rn = 1 ORDER BY [NRO. SUCURSAL]
@@ -630,8 +631,8 @@ app.get('/api/schema', async (req, res) => {
 });
 
 const PORT = 3002;
-app.listen(PORT, () => {
-    console.log(`\n\x1b[32m%s\x1b[0m`, `[RETAIL] Servidor local escuchando en http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n\x1b[32m%s\x1b[0m`, `[RETAIL] Servidor en red: http://192.168.1.74:${PORT}`);
     console.log(`\x1b[33m%s\x1b[0m`, `[RETAIL] Iniciando túnel Antigravity (Capturando salida)...`);
 
     // Usamos npm.cmd y shell: false para que NO abra ventanas de PowerShell externas

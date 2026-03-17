@@ -342,23 +342,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
                   <tbody className="divide-y divide-border-dark bg-[#020617]">
                     {saldosCajas.map((row, i) => {
                       const saldo = Number(row.saldo ?? 0);
-                      const fechaVal = row.fecha_actualizacion;
-                      let fechaFmt = '-';
-                      if (fechaVal) {
-                        try {
-                          const d = typeof fechaVal === 'string' ? new Date(fechaVal) : fechaVal;
-                          if (!isNaN(d.getTime())) {
-                            const day = String(d.getDate()).padStart(2, '0');
-                            const month = String(d.getMonth() + 1).padStart(2, '0');
-                            const year = String(d.getFullYear()).slice(-2);
-                            const h = String(d.getHours()).padStart(2, '0');
-                            const min = String(d.getMinutes()).padStart(2, '0');
-                            fechaFmt = `${day}/${month}/${year} ${h}:${min}`;
-                          }
-                        } catch (_) {
-                          fechaFmt = String(fechaVal).slice(0, 16);
-                        }
-                      }
+                      
+                      const formatFechaManual = (val: string) => {
+                        if (!val) return '-';
+                        const soloFecha = val.split('T')[0];
+                        const parts = soloFecha.split('-');
+                        if (parts.length !== 3) return val;
+                        const [year, month, day] = parts;
+                        return `${day}/${month}/${year}`;
+                      };
+                      
+                      const fechaFmt = formatFechaManual(row.fecha_actualizacion);
                       return (
                         <tr key={i} className="hover:bg-slate-800/40 transition-colors">
                           <td className="px-4 py-3 font-medium text-slate-200 whitespace-nowrap">{row.nro_sucursal}</td>
@@ -372,6 +366,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
                       );
                     })}
                   </tbody>
+                  <tfoot className="bg-[#0f172a]/80 border-t-2 border-primary/30">
+                    <tr>
+                      <td colSpan={2} className="px-4 py-3"></td>
+                      <td className="px-4 py-3 text-sm font-bold text-slate-200">TOTAL GENERAL</td>
+                      <td className="px-4 py-3 text-right font-bold text-primary tabular-nums text-base">
+                        {formatCurrency(saldosCajas.reduce((acc, row) => acc + Number(row.saldo ?? 0), 0))}
+                      </td>
+                      <td className="px-4 py-3"></td>
+                    </tr>
+                  </tfoot>
                 </table>
               )}
             </div>

@@ -1,7 +1,6 @@
 import { StockFilters, StockMatrixRow } from '../types';
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3002/api/ventas';
-const BASE_URL = API_URL.replace('/api/ventas', '');
+const BASE_URL = import.meta.env.VITE_API_URL;
 
 /**
  * Trae saldos de stock desde /api/stock y los transforma en matriz (Artículo x Sucursales).
@@ -13,7 +12,7 @@ export async function fetchStock(filters: StockFilters): Promise<StockMatrixRow[
   if (filters.fechaHasta) params.append('fechaHasta', filters.fechaHasta);
 
   try {
-    const url = `${BASE_URL}/api/stock?${params}`;
+    const url = `${BASE_URL}/stock?${params}`;
     console.log('[stockService] fetchStock: Fetching URL:', url);
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
