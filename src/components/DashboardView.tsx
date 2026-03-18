@@ -46,6 +46,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
     new Intl.NumberFormat('es-AR', { notation: 'compact', maximumFractionDigits: 1 }).format(v);
   const fmtFull = (v: number) =>
     new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 }).format(v);
+  const fmtPct = (v: number) => {
+    if (isNaN(v) || !isFinite(v)) return '0,0%';
+    return v.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+  };
 
   /* ─── KPIs (Stats) ────────────────────────────────── */
   const stats = useMemo(() => {
@@ -281,6 +285,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
                                   {pctVar >= 0 ? '▲' : '▼'} {Math.abs(pctVar).toFixed(1)}% vs mes anterior
                                 </div>
                               )}
+                              
+                              {branch.segments && branch.segments.length > 0 && (
+                                <div className="border-t border-slate-700 pt-1.5 mt-1.5 flex flex-col gap-1">
+                                  {branch.segments.map((seg, idx) => {
+                                    if (seg.amount <= 0) return null;
+                                    const pct = branch.actual > 0 ? (seg.amount / branch.actual) * 100 : 0;
+                                    return (
+                                      <div key={idx} className="flex items-center gap-1.5">
+                                        <span className="size-2 rounded-sm shrink-0" style={{ backgroundColor: seg.color }} />
+                                        <span className="text-slate-400 capitalize">{seg.cat.replace(/_/g, ' ').toLowerCase()}:</span>
+                                        <div className="flex gap-1">
+                                          <span className="text-slate-200">{fmtFull(seg.amount)}</span>
+                                          <span className="text-slate-500 text-[10px] leading-tight flex items-end">
+                                            ({fmtPct(pct)})
+                                          </span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
                             <div className="size-1.5 bg-slate-900 rotate-45 -mt-1 border-r border-b border-slate-700" />
                           </div>
@@ -399,7 +424,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
                     {cobrosMatrix.sucursales.map(suc => (
                       <th key={suc} className="px-4 py-3.5 text-right tracking-wide whitespace-nowrap">Suc. {suc}</th>
                     ))}
-                    <th className="px-4 py-3.5 text-right tracking-wide whitespace-nowrap border-l border-border-dark text-primary">TOTALES</th>
+                    <th className="px-4 py-3.5 text-right tracking-wide whitespace-nowrap border-l border-border-dark text-primary">TOTALES (% Participación)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border-dark bg-[#020617]">
@@ -412,7 +437,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
                         </td>
                       ))}
                       <td className="px-4 py-3 text-right font-semibold text-white tabular-nums border-l border-border-dark">
-                        {formatCurrency(cobrosMatrix.rowTotals.get(cat) ?? 0)}
+                        <div>{formatCurrency(cobrosMatrix.rowTotals.get(cat) ?? 0)}</div>
+                        <div className="text-[10px] text-slate-500 font-normal mt-0.5">
+                          ({fmtPct(cobrosMatrix.grandTotal > 0 ? ((cobrosMatrix.rowTotals.get(cat) ?? 0) / cobrosMatrix.grandTotal) * 100 : 0)})
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -425,6 +453,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
                     ))}
                     <td className="px-4 py-3.5 text-right font-bold text-primary tabular-nums border-l border-border-dark">
                       {formatCurrency(cobrosMatrix.grandTotal)}
+                    </td>
+                  </tr>
+                  <tr className="bg-[#0f172a]/50 text-[11px] font-medium border-t border-border-dark/60">
+                    <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap">% PARTICIPACIÓN SOBRE TOTAL</td>
+                    {cobrosMatrix.sucursales.map(suc => (
+                      <td key={suc} className="px-4 py-2.5 text-right text-slate-400 tabular-nums">
+                        {fmtPct(cobrosMatrix.grandTotal > 0 ? ((cobrosMatrix.colTotals.get(suc) ?? 0) / cobrosMatrix.grandTotal) * 100 : 0)}
+                      </td>
+                    ))}
+                    <td className="px-4 py-2.5 text-right text-slate-400 tabular-nums border-l border-border-dark/60">
+                      100,0%
                     </td>
                   </tr>
                 </tbody>

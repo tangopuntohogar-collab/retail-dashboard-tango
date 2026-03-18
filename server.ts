@@ -409,6 +409,7 @@ app.get('/api/saldos-cajas', async (req, res) => {
                    OR (S.NRO_SUCURSAL = 1018 AND T.COD_CTA_CUENTA_TESORERIA = 11070)
                    OR (S.NRO_SUCURSAL = 1019 AND T.COD_CTA_CUENTA_TESORERIA = 11060)
                    OR (S.NRO_SUCURSAL = 1015 AND T.COD_CTA_CUENTA_TESORERIA = 11030)
+                   OR (S.NRO_SUCURSAL = 1001 AND T.COD_CTA_CUENTA_TESORERIA = 11200)
             )
             SELECT [NRO. SUCURSAL], [COD. CUENTA], [DESC. CUENTA], [SALDO], [FECHA_ACTUALIZACION]
             FROM UltimosSaldos WHERE rn = 1 ORDER BY [NRO. SUCURSAL]
