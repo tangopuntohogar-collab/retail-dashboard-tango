@@ -31,7 +31,7 @@ function buildWhere(
         familia?: string;
         categoria?: string;
         sucursales?: string[];   // ← NUEVO: filtra por una o varias sucursales
-        proveedor?: string;
+        proveedores?: string[];
     }
 ): string {
     const clauses: string[] = [];
@@ -60,9 +60,18 @@ function buildWhere(
         request.input('categoria', sql.NVarChar, params.categoria);
         clauses.push('[Categoria] = @categoria');
     }
-    if (params.proveedor) {
-        request.input('proveedor', sql.NVarChar, params.proveedor);
-        clauses.push('[PROVEEDOR (Adic.)] = @proveedor');
+    // Proveedores: soporta N valores → IN (@p0, @p1, ...)
+    if (params.proveedores && params.proveedores.length > 0) {
+        if (params.proveedores.length === 1) {
+            request.input('proveedor0', sql.NVarChar, String(params.proveedores[0]));
+            clauses.push('[PROVEEDOR (Adic.)] = @proveedor0');
+        } else {
+            const placeholders = params.proveedores.map((p, i) => {
+                request.input(`proveedor${i}`, sql.NVarChar, String(p));
+                return `@proveedor${i}`;
+            }).join(', ');
+            clauses.push(`[PROVEEDOR (Adic.)] IN (${placeholders})`);
+        }
     }
 
     // Sucursales: soporta N valores → IN (@s0, @s1, ...)
@@ -114,6 +123,11 @@ app.get('/api/ventas', async (req, res) => {
         const sucArray = Array.isArray(q.sucursal)
             ? (q.sucursal as string[])
             : q.sucursal ? [q.sucursal] : [];
+            
+        // proveedor puede venir como array
+        const provArray = Array.isArray(q.proveedor)
+            ? (q.proveedor as string[])
+            : q.proveedor ? [q.proveedor] : [];
 
         const incluirComparativo = q.incluirPeriodoAnterior === '1' && q.desde && q.hasta;
 
@@ -129,7 +143,8 @@ app.get('/api/ventas', async (req, res) => {
             if (q.medioPago) { compReq.input('medioPago', sql.NVarChar, q.medioPago); }
             if (q.familia) { compReq.input('familia', sql.NVarChar, q.familia); }
             if (q.categoria) { compReq.input('categoria', sql.NVarChar, q.categoria); }
-            if (q.proveedor) { compReq.input('proveedor', sql.NVarChar, q.proveedor); }
+            if (provArray.length === 1) compReq.input('proveedor0', sql.NVarChar, provArray[0]);
+            else if (provArray.length > 1) provArray.forEach((p, i) => compReq.input(`proveedor${i}`, sql.NVarChar, p));
             const sucClauses: string[] = [];
             if (sucArray.length === 1) {
                 compReq.input('sucursal0', sql.NVarChar, sucArray[0]);
@@ -138,26 +153,44 @@ app.get('/api/ventas', async (req, res) => {
                 sucArray.forEach((s, i) => compReq.input(`sucursal${i}`, sql.NVarChar, s));
                 sucClauses.push(`[Nro. Sucursal] IN (${sucArray.map((_, i) => `@sucursal${i}`).join(', ')})`);
             }
-            const compWhere = [
-                'Fecha BETWEEN DATEADD(month, -1, @desde) AND @hasta',
+            const compWhereActual = [
+                'Fecha BETWEEN @desde AND @hasta',
                 ...(q.medioPago ? ['[Medio de Pago] = @medioPago'] : []),
                 ...(q.familia ? ['[Familia] = @familia'] : []),
                 ...(q.categoria ? ['[Categoria] = @categoria'] : []),
-                ...(q.proveedor ? ['[PROVEEDOR (Adic.)] = @proveedor'] : []),
+                ...(provArray.length > 0 ? (provArray.length === 1 ? ['[PROVEEDOR (Adic.)] = @proveedor0'] : [`[PROVEEDOR (Adic.)] IN (${provArray.map((_, i) => `@proveedor${i}`).join(', ')})`]) : []),
                 ...sucClauses,
             ].filter(Boolean).join(' AND ');
+
+            const compWhereAnterior = [
+                'Fecha BETWEEN DATEADD(month, -1, @desde) AND DATEADD(month, -1, @hasta)',
+                ...(q.medioPago ? ['[Medio de Pago] = @medioPago'] : []),
+                ...(q.familia ? ['[Familia] = @familia'] : []),
+                ...(q.categoria ? ['[Categoria] = @categoria'] : []),
+                ...(provArray.length > 0 ? (provArray.length === 1 ? ['[PROVEEDOR (Adic.)] = @proveedor0'] : [`[PROVEEDOR (Adic.)] IN (${provArray.map((_, i) => `@proveedor${i}`).join(', ')})`]) : []),
+                ...sucClauses,
+            ].filter(Boolean).join(' AND ');
+
             const compLimit = 5000;
             compReq.input('compOffset', sql.Int, 0);
             compReq.input('compLimit', sql.Int, compLimit);
 
             const compResult = await compReq.query(`
-                SELECT ${VENTAS_COLUMNS},
-                    CASE WHEN Dashboard_Ventas_Local.Fecha >= @desde THEN 'actual' ELSE 'anterior' END AS periodo_comparativo
-                FROM Dashboard_Ventas_Local
-                LEFT JOIN CTA_ARTICULO ON Dashboard_Ventas_Local.[Cód. Artículo] COLLATE DATABASE_DEFAULT = CTA_ARTICULO.COD_CTA_ARTICULO COLLATE DATABASE_DEFAULT
-                WHERE ${compWhere}
-                ORDER BY Fecha DESC
-                OFFSET @compOffset ROWS FETCH NEXT @compLimit ROWS ONLY
+                SELECT * FROM (
+                    SELECT TOP (@compLimit) ${VENTAS_COLUMNS}, 'actual' AS periodo_comparativo
+                    FROM Dashboard_Ventas_Local
+                    LEFT JOIN CTA_ARTICULO ON Dashboard_Ventas_Local.[Cód. Artículo] COLLATE DATABASE_DEFAULT = CTA_ARTICULO.COD_CTA_ARTICULO COLLATE DATABASE_DEFAULT
+                    WHERE ${compWhereActual}
+                    ORDER BY Fecha DESC
+                ) A
+                UNION ALL
+                SELECT * FROM (
+                    SELECT TOP (@compLimit) ${VENTAS_COLUMNS}, 'anterior' AS periodo_comparativo
+                    FROM Dashboard_Ventas_Local
+                    LEFT JOIN CTA_ARTICULO ON Dashboard_Ventas_Local.[Cód. Artículo] COLLATE DATABASE_DEFAULT = CTA_ARTICULO.COD_CTA_ARTICULO COLLATE DATABASE_DEFAULT
+                    WHERE ${compWhereAnterior}
+                    ORDER BY Fecha DESC
+                ) B
             `);
             dataRows = compResult.recordset as any[];
             // Diagnóstico: primeros 5 registros con periodo_comparativo
@@ -178,13 +211,14 @@ app.get('/api/ventas', async (req, res) => {
             if (q.medioPago) countReq.input('medioPago', sql.NVarChar, q.medioPago);
             if (q.familia) countReq.input('familia', sql.NVarChar, q.familia);
             if (q.categoria) countReq.input('categoria', sql.NVarChar, q.categoria);
-            if (q.proveedor) countReq.input('proveedor', sql.NVarChar, q.proveedor);
+            if (provArray.length === 1) countReq.input('proveedor0', sql.NVarChar, provArray[0]);
+            else if (provArray.length > 1) provArray.forEach((p, i) => countReq.input(`proveedor${i}`, sql.NVarChar, p));
             if (sucArray.length === 1) countReq.input('sucursal0', sql.NVarChar, sucArray[0]);
             else if (sucArray.length > 1) sucArray.forEach((s, i) => countReq.input(`sucursal${i}`, sql.NVarChar, s));
             const countRes = await countReq.query(`
                 SELECT COUNT(*) AS total, SUM([Total cIVA]) AS totalImporteGlobal
                 FROM Dashboard_Ventas_Local
-                WHERE ${compWhere}
+                WHERE ${compWhereActual}
             `);
             total = Number(countRes.recordset[0]?.total ?? 0);
             totalImporteGlobal = Number(countRes.recordset[0]?.totalImporteGlobal ?? 0);
@@ -193,7 +227,7 @@ app.get('/api/ventas', async (req, res) => {
             const whereStats = buildWhere(statsReq, {
                 desde: q.desde, hasta: q.hasta,
                 medioPago: q.medioPago, familia: q.familia, categoria: q.categoria,
-                proveedor: q.proveedor,
+                proveedores: provArray,
                 sucursales: sucArray,
             });
             const statsResult = await statsReq.query(`
@@ -207,7 +241,7 @@ app.get('/api/ventas', async (req, res) => {
             const whereData = buildWhere(dataReq, {
                 desde: q.desde, hasta: q.hasta,
                 medioPago: q.medioPago, familia: q.familia, categoria: q.categoria,
-                proveedor: q.proveedor,
+                proveedores: provArray,
                 sucursales: sucArray,
             });
             dataReq.input('offset', sql.Int, offset);
@@ -441,7 +475,7 @@ app.get('/api/ventas/stats', async (req, res) => {
             medioPago: q.medioPago as string,
             familia: q.familia as string,
             categoria: q.categoria as string,
-            proveedor: q.proveedor as string,
+            proveedores: Array.isArray(q.proveedor) ? q.proveedor : q.proveedor ? [q.proveedor as string] : [],
             sucursales: sucArray,
         });
 
@@ -498,7 +532,7 @@ app.get('/api/dashboard', async (req, res) => {
             medioPago: q.medioPago as string,
             familia: q.familia as string,
             categoria: q.categoria as string,
-            proveedor: q.proveedor as string,
+            proveedores: Array.isArray(q.proveedor) ? q.proveedor : q.proveedor ? [q.proveedor as string] : [],
             sucursales: sucArray,
         });
 

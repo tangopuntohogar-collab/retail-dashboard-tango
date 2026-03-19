@@ -162,7 +162,7 @@ export async function fetchVentas(
     if (filters.mediosPago?.length === 1) params.set('medioPago', filters.mediosPago[0]);
     if (filters.familias?.length === 1) params.set('familia', filters.familias[0]);
     if (filters.categorias?.length === 1) params.set('categoria', filters.categorias[0]);
-    if (filters.proveedores?.length === 1) params.set('proveedor', filters.proveedores[0]);
+    filters.proveedores?.forEach(p => params.append('proveedor', String(p)));
     filters.sucursales?.forEach(s => params.append('sucursal', String(s)));
     params.set('page', String(pageIndex));
     params.set('limit', String(PAGE_SIZE));
@@ -220,7 +220,7 @@ export async function fetchVentasParaCobros(filters: VentasFilters): Promise<Ven
     if (filters.mediosPago?.length === 1) params.set('medioPago', filters.mediosPago[0]);
     if (filters.familias?.length === 1) params.set('familia', filters.familias[0]);
     if (filters.categorias?.length === 1) params.set('categoria', filters.categorias[0]);
-    if (filters.proveedores?.length === 1) params.set('proveedor', filters.proveedores[0]);
+    filters.proveedores?.forEach(p => params.append('proveedor', String(p)));
     filters.sucursales?.forEach(s => params.append('sucursal', String(s)));
     params.set('page', '0');
     params.set('limit', '5000');
@@ -236,6 +236,7 @@ export async function fetchVentasParaCobros(filters: VentasFilters): Promise<Ven
         const rawActual = raw.filter((r: any) => getPeriodo(r) === 'actual');
         const rawAnterior = raw.filter((r: any) => getPeriodo(r) === 'anterior');
         console.log('[salesService] fetchVentasParaCobros - total:', raw.length, '| actual:', rawActual.length, '| anterior:', rawAnterior.length);
+        console.log('[Debug] Data Mes Anterior:', rawAnterior);
         const serverFiltered = {
             ...filters,
             sucursales: [] as string[],
@@ -244,10 +245,17 @@ export async function fetchVentasParaCobros(filters: VentasFilters): Promise<Ven
             categorias: filters.categorias?.length === 1 ? [] : filters.categorias,
             proveedores: filters.proveedores,
         };
+        
+        const serverFilteredAnterior = {
+            ...serverFiltered,
+            fechaDesde: undefined,
+            fechaHasta: undefined,
+        }
+
         let actual = rawActual.map(mapVenta);
         let anterior = rawAnterior.map(mapVenta);
         actual = applyFiltersLocal(actual, serverFiltered as VentasFilters);
-        anterior = applyFiltersLocal(anterior, serverFiltered as VentasFilters);
+        anterior = applyFiltersLocal(anterior, serverFilteredAnterior as VentasFilters);
         return { actual, anterior };
     } catch (err) {
         console.error('[salesService] fetchVentasParaCobros error, fallback getAllVentas:', err);
@@ -298,6 +306,7 @@ export async function fetchVentasStats(filters: VentasFilters): Promise<{
     if (filters.mediosPago?.length === 1) params.set('medioPago', filters.mediosPago[0]);
     if (filters.familias?.length === 1) params.set('familia', filters.familias[0]);
     if (filters.categorias?.length === 1) params.set('categoria', filters.categorias[0]);
+    filters.proveedores?.forEach(p => params.append('proveedor', String(p)));
     
     const url = `${API_URL}/ventas/stats?${params}`;
     console.log('[salesService] fetchVentasStats:', url);
@@ -320,7 +329,9 @@ export async function fetchVentasAgregadas(filters: VentasFilters): Promise<Dash
         if (filters.mediosPago?.length === 1) params.set('medioPago', filters.mediosPago[0]);
         if (filters.familias?.length === 1) params.set('familia', filters.familias[0]);
         if (filters.categorias?.length === 1) params.set('categoria', filters.categorias[0]);
-        if (filters.proveedores?.length === 1) params.set('proveedor', filters.proveedores[0]);
+        filters.proveedores?.forEach(p => params.append('proveedor', String(p)));
+        
+        console.log('[Debug] Filtros enviados a /api/dashboard:', Array.from(params.entries()));
 
         const url = `${API_URL}/dashboard?${params}`;
         console.log('[salesService] Dashboard fetch:', url);

@@ -179,7 +179,7 @@ export default function App() {
   // Re-fetcha cuando cambia cualquier filtro que el servidor ahora maneja
   }, [dashFilters.fechaDesde, dashFilters.fechaHasta,
       dashFilters.mediosPago, dashFilters.familias, dashFilters.categorias,
-      dashFilters.sucursales]);
+      dashFilters.sucursales, dashFilters.proveedores]);
 
   useEffect(() => {
     console.log('[App] useEffect detailFilters triggered:', detailFilters);
