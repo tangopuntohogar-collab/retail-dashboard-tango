@@ -3,11 +3,21 @@ import { StockMatrixRow, StockFilters, DetailFilterOptions, getInitialStockFilte
 import { fetchStock } from '../lib/stockService';
 import { StockTable } from './StockTable';
 import { FilterSidebar } from './FilterSidebar';
+import { AIAnalysisPanel } from './AIAnalysisPanel';
+import { aggregateStockMetrics } from '../lib/metricsAggregator';
+import { getAISettings, type AISettings } from '../lib/aiAnalysisService';
 
 export const StockView: React.FC = () => {
   const [rawData, setRawData] = useState<StockMatrixRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filters, setFilters] = useState<StockFilters>(getInitialStockFilters());
+  const [aiSettings, setAiSettings] = useState<AISettings | null>(null);
+
+  useEffect(() => {
+    getAISettings()
+      .then(setAiSettings)
+      .catch(() => {});
+  }, []);
 
   const loadStock = async () => {
     setIsLoading(true);
@@ -76,6 +86,21 @@ export const StockView: React.FC = () => {
     });
   }, [rawData, filters]);
 
+  const statsSucursal = filters.sucursales.length === 1 ? filters.sucursales[0] : '1001';
+
+  const stockAiPayload = useMemo(() => {
+    if (isLoading || rawData.length === 0) return null;
+    return aggregateStockMetrics(
+      filteredData,
+      filters,
+      {
+        coberturaCriticaDias: aiSettings?.umbrales.coberturaCriticaDias ?? 7,
+        coberturaAltaDias: aiSettings?.umbrales.coberturaAltaDias ?? 90,
+      },
+      statsSucursal
+    );
+  }, [isLoading, rawData.length, filteredData, filters, aiSettings, statsSucursal]);
+
   return (
     <div className="h-full flex overflow-hidden">
       <FilterSidebar
@@ -88,14 +113,25 @@ export const StockView: React.FC = () => {
         hideDateRange={false}
         view="stock"
       />
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden overflow-y-auto">
         <StockTable 
           data={filteredData} 
           isLoading={isLoading} 
           fechaDesde={filters.fechaDesde}
           fechaHasta={filters.fechaHasta}
-          statsSucursal={filters.sucursales.length === 1 ? filters.sucursales[0] : '1001'}
+          statsSucursal={statsSucursal}
         />
+        <div className="px-8 pb-6 shrink-0">
+          <AIAnalysisPanel
+            screen="stock"
+            payload={stockAiPayload}
+            onSettingsSaved={() => {
+              getAISettings()
+                .then(setAiSettings)
+                .catch(() => {});
+            }}
+          />
+        </div>
       </div>
     </div>
   );

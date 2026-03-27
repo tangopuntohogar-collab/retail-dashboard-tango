@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     Search, ChevronDown, ChevronUp, X, SlidersHorizontal,
     Building2, Tag, CreditCard, Users, FilterX, Loader2,
-    FileSearch, CalendarDays, Hash, Layers, Box, FileText,
+    FileSearch, CalendarDays, Layers, Box, FileText,
     VenetianMask, Truck,
 } from 'lucide-react';
 import { VentasFilters, StockFilters, DetailFilterOptions, getInitialFilters, getInitialStockFilters } from '../types';
@@ -17,6 +17,8 @@ interface FilterSidebarProps {
     applyMode?: 'manual' | 'immediate';
     /** Estado de carga de datos: deshabilita el botón Aplicar y muestra feedback. */
     isLoading?: boolean;
+    /** Vista stock: oculta filtros propios de ventas. */
+    view?: 'sales' | 'stock';
 }
 
 /* ─── Skeleton ──────────────────────────────────────────────────────────── */
@@ -211,6 +213,17 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
         }
     }, [isStock, isManual, onFiltersChange]);
 
+    const handleClienteChange = useCallback((val: string) => {
+        if (isStock) return;
+        setTempFilters(f => ({ ...f, cliente: val }));
+        if (!isManual) {
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+            debounceRef.current = setTimeout(() => {
+                onFiltersChange({ ...tempFiltersRef.current, cliente: val } as VentasFilters);
+            }, 420);
+        }
+    }, [isStock, isManual, onFiltersChange]);
+
     const toggle = useCallback((key: string, val: string) => {
         const current = (tempFilters[key as keyof typeof tempFilters] as string[]) || [];
         const next = current.includes(val) ? current.filter(v => v !== val) : [...current, val];
@@ -227,15 +240,6 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
         setTempFilters(updated);
         if (!isManual) onFiltersChange(updated as VentasFilters);
     }, [isStock, asVentas.mediosPago, tempFilters, isManual, onFiltersChange]);
-
-    const toggleCuota = useCallback((val: number) => {
-        if (isStock) return;
-        const current = asVentas.cuotas;
-        const next = current.includes(val) ? current.filter(v => v !== val) : [...current, val];
-        const updated = { ...tempFilters, cuotas: next };
-        setTempFilters(updated);
-        if (!isManual) onFiltersChange(updated as VentasFilters);
-    }, [isStock, asVentas.cuotas, tempFilters, isManual, onFiltersChange]);
 
     const handleApplyFilters = useCallback((e?: React.FormEvent) => {
         e?.preventDefault();
@@ -259,8 +263,7 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
             asVentas.rubros.length +
             asVentas.mediosPago.length +
             asVentas.cuentas.length +
-            asVentas.clientes.length +
-            asVentas.cuotas.length +
+            (asVentas.cliente?.trim() ? 1 : 0) +
             (asVentas.comprobante ? 1 : 0)
         ) : 0);
 
@@ -269,7 +272,7 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
     const handleClear = useCallback(() => {
         const initial = isStock ? getInitialStockFilters() : getInitialFilters();
         setTempFilters(initial);
-        if (!isManual) onFiltersChange(initial);
+        if (!isManual) onFiltersChange(initial as unknown as VentasFilters);
     }, [isStock, onFiltersChange, isManual]);
 
     const handleDateChange = useCallback((key: 'fechaDesde' | 'fechaHasta', val: string) => {
@@ -414,6 +417,30 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
                     </div>
                 )}
 
+                {!isStock && (
+                    <div className="px-4 py-3 border-b border-slate-800">
+                        <div className="relative">
+                            <Users size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                            <input
+                                type="text"
+                                placeholder="Código de cliente..."
+                                value={asVentas.cliente ?? ''}
+                                onChange={e => handleClienteChange(e.target.value)}
+                                className="w-full bg-slate-800/70 border border-slate-700 text-slate-200 placeholder-slate-500 rounded-md pl-8 pr-7 py-1.5 text-xs focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
+                            />
+                            {asVentas.cliente?.trim() ? (
+                                <button
+                                    type="button"
+                                    onClick={() => handleClienteChange('')}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
+                                >
+                                    <X size={12} />
+                                </button>
+                            ) : null}
+                        </div>
+                    </div>
+                )}
+
                 {/* El bloque de Período de Análisis ha sido eliminado ya que ahora es dinámico */}
             </div>
 
@@ -502,28 +529,6 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
                     </Accordion>
                 )}
 
-                {/* Cuotas — dinámico via DISTINCT cant_cuotas */}
-                {!isStock && (
-                    <Accordion
-                        title="Cuotas"
-                        icon={<Hash size={14} />}
-                        count={asVentas.cuotas.length}
-                        isLoading={isLoadingOptions}
-                    >
-                        {options.cuotas.length === 0
-                            ? <span className="text-xs text-slate-500">Sin cuotas en el período</span>
-                            : options.cuotas.map(c => (
-                                <CheckItem
-                                    key={c}
-                                    label={`${c} cuota${c === 1 ? '' : 's'}`}
-                                    checked={asVentas.cuotas.includes(c)}
-                                    onChange={() => toggleCuota(c)}
-                                />
-                            ))
-                        }
-                    </Accordion>
-                )}
-
                 {/* Categoría */}
                 <Accordion
                     title="Categoría"
@@ -596,25 +601,6 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
                     }
                 </Accordion>
 
-                {/* Cliente — con buscador interno */}
-                {!isStock && (
-                    <Accordion
-                        title="Cliente"
-                        icon={<Users size={14} />}
-                        count={asVentas.clientes.length}
-                        isLoading={isLoadingOptions}
-                    >
-                        {options.clientes.length === 0
-                            ? <span className="text-xs text-slate-500">Sin datos para el período</span>
-                            : <SearchableCheckList
-                                items={options.clientes}
-                                selected={asVentas.clientes}
-                                onToggle={v => toggle('clientes', v)}
-                                placeholder="Buscar cliente..."
-                            />
-                        }
-                    </Accordion>
-                )}
             </div>
 
             {/* Footer: Aplicar (manual) + Limpiar */}

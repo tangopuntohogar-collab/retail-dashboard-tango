@@ -1,6 +1,7 @@
 import React from 'react';
 import { VentaRow } from '../types';
 import { Loader2 } from 'lucide-react';
+import { isNotaCreditoTipo } from '../lib/salesService';
 
 interface SalesTableProps {
   data: VentaRow[];
@@ -273,9 +274,13 @@ export const SalesTable: React.FC<SalesTableProps> = ({ data, isLoading, totalIm
                   {item.costo != null ? formatCurrency(item.costo) : <span className="text-slate-700">—</span>}
                 </td>
 
-                {/* Rentabilidad */}
+                {/* Rentabilidad — no aplica en NC (devolución) */}
                 <td className="px-4 py-3 text-right">
-                  {getMargenBadge(item.porcentaje_rentabilidad)}
+                  {isNotaCreditoTipo(item.t_comp) || item.porcentaje_rentabilidad === null || item.porcentaje_rentabilidad === undefined ? (
+                    <span className="text-slate-500">-</span>
+                  ) : (
+                    getMargenBadge(item.porcentaje_rentabilidad)
+                  )}
                 </td>
               </tr>
             ))

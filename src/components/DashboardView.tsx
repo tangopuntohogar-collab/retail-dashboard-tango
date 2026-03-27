@@ -1,7 +1,9 @@
 import React, { useMemo } from 'react';
 import { StatsCard } from './StatsCard';
+import { AIAnalysisPanel } from './AIAnalysisPanel';
 import { DashboardMetrics, VentaRow } from '../types';
 import { Loader2 } from 'lucide-react';
+import { aggregateDashboardMetrics } from '../lib/metricsAggregator';
 
 /** Categoriza el medio de pago para el Resumen de Cobros (mismo mapeo que Detalle) */
 const getCategoriaCobro = (item: VentaRow): string => {
@@ -155,6 +157,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
     return { bars, maxTotal };
   }, [cobrosMatrix, colTotalsAnterior]);
 
+  const aiPayload = useMemo(() => {
+    if (!data) return null;
+    return aggregateDashboardMetrics(
+      data,
+      ventasParaCobros,
+      ventasAnterior,
+      saldosCajas,
+      { fechaDesde: filters.fechaDesde, fechaHasta: filters.fechaHasta }
+    );
+  }, [data, ventasParaCobros, ventasAnterior, saldosCajas, filters.fechaDesde, filters.fechaHasta]);
+
   /* ─── Spinner overlay ──────────────────────────────── */
   const Spinner = () => (
     <div className="absolute inset-0 flex items-center justify-center z-30 bg-[#020617]/70 backdrop-blur-sm">
@@ -201,16 +214,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
                 isAnterior: boolean,
                 segments?: { cat: string; amount: number; color: string }[]
               ) => {
-                if (barH === 0) return <div style={{ maxWidth: 34, width: 34 }} />;
+                if (barH === 0) {
+                  return <div className="shrink-0" style={{ width: 34, height: BAR_AREA_H }} />;
+                }
                 const bg = isAnterior ? COLOR_ANTERIOR : undefined;
                 return (
                   <div
-                    className="relative flex flex-col items-center group/bar"
-                    style={{ height: BAR_AREA_H, maxWidth: 34 }}
+                    className="relative flex shrink-0 flex-col justify-end items-center group/bar"
+                    style={{ height: BAR_AREA_H, width: 34, maxWidth: 34 }}
                   >
                     <span
-                      className={`text-[8px] whitespace-nowrap font-medium ${isAnterior ? 'text-slate-600' : 'text-slate-400'}`}
-                      style={{ marginBottom: BAR_AREA_H - barH + 2 }}
+                      className={`absolute left-1/2 z-[1] -translate-x-1/2 text-[10px] whitespace-nowrap font-medium ${isAnterior ? 'text-slate-600' : 'text-slate-400'}`}
+                      style={{ bottom: barH + 4 }}
                     >
                       {fmtCompact(total)}
                     </span>
@@ -471,6 +486,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
             )}
           </div>
         </div>
+
+        <AIAnalysisPanel screen="dashboard" payload={aiPayload} />
       </div>
     </div>
   );

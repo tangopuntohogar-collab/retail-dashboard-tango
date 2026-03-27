@@ -1,11 +1,25 @@
 import { VentaRow, VentasFilters, DashboardMetrics, DashboardKPIs, StackedDataPoint, TopArticle, RubroPoint, SaldoCajaRow } from '../types';
+import { getServerBaseUrl } from './apiConfig';
 
-
-const API_URL = import.meta.env.VITE_API_URL;
-console.log('[Network] API Base URL:', API_URL);
+const apiRoot = () => `${getServerBaseUrl()}/api`;
+console.log('[Network] API Base URL:', apiRoot());
 
 /** Límite de filas para el detalle de grilla (Frontend) */
 export const PAGE_SIZE = 500;
+
+/** Query params alineados con `buildWhere` / `ventasFilterPayloadFromQuery` en server.ts */
+export function appendVentasSqlFilters(params: URLSearchParams, filters: VentasFilters) {
+    if (filters.fechaDesde) params.set('desde', filters.fechaDesde);
+    if (filters.fechaHasta) params.set('hasta', filters.fechaHasta);
+    if (filters.mediosPago?.length === 1) params.set('medioPago', filters.mediosPago[0]);
+    if (filters.familias?.length === 1) params.set('familia', filters.familias[0]);
+    if (filters.categorias?.length === 1) params.set('categoria', filters.categorias[0]);
+    filters.proveedores?.forEach(p => params.append('proveedor', String(p)));
+    filters.sucursales?.forEach(s => params.append('sucursal', String(s)));
+    filters.tipos?.forEach(t => params.append('tipo', String(t)));
+    filters.generos?.forEach(g => params.append('genero', String(g)));
+    if (filters.cliente?.trim()) params.set('cliente', filters.cliente.trim());
+}
 
 // Cache por rango de fechas: "desde|hasta" → VentaRow[]
 const cache = new Map<string, VentaRow[]>();
@@ -16,6 +30,13 @@ const cache = new Map<string, VentaRow[]>();
  * Cód. vendedor | Cód. Artículo | Descripción | Medio de Pago | Precio Neto |
  * Precio Unitario | Total cIVA | Familia | Categoria | Cantidad
  */
+/** Nota de crédito (devolución): la rentabilidad no aplica — coincide con columna "Tipo de comprobante" de la vista. */
+export function isNotaCreditoTipo(tipo: string | null | undefined): boolean {
+    const u = String(tipo ?? '').trim().toUpperCase();
+    if (!u) return false;
+    return u === 'NC' || u.startsWith('NC');
+}
+
 /**
  * Función central de mapeo: de SQL Server (Dashboard_Ventas_Local) a VentaRow (Frontend).
  */
@@ -26,10 +47,15 @@ function mapVenta(row: any): VentaRow {
     const medioPago  = row['Medio de Pago']   ?? null;
     const proveedor  = row['PROVEEDOR (Adic.)'] ?? null; 
     const costoUnitario = row['CostoUnitario'] != null ? Number(row['CostoUnitario']) : null;
+    const tipoComp = String(row['Tipo de comprobante'] ?? '').trim();
 
-    let rentabilidad = 0;
-    if (precioUnit != null && costoUnitario != null && costoUnitario > 0) {
-        rentabilidad = ((precioUnit - costoUnitario) / costoUnitario) * 100;
+    let rentabilidad: number | null = null;
+    if (!isNotaCreditoTipo(tipoComp)) {
+        if (precioUnit != null && costoUnitario != null && costoUnitario > 0) {
+            rentabilidad = ((precioUnit - costoUnitario) / costoUnitario) * 100;
+        } else {
+            rentabilidad = 0;
+        }
     }
 
     const fechaRaw = row['Fecha'];
@@ -41,7 +67,7 @@ function mapVenta(row: any): VentaRow {
         // ── Columnas reales ──────────────────────────────────────────────────
         fecha,
         nro_sucursal:   String(row['Nro. Sucursal']   ?? ''),
-        t_comp:         row['Tipo de comprobante']    ?? '',
+        t_comp:         tipoComp,
         n_comp:         row['Nro. Comprobante']       ?? '',
         cod_vendedor:   row['Cód. vendedor']          ?? '',
         cod_articu:     row['Cód. Artículo']          ?? '',
@@ -63,7 +89,6 @@ function mapVenta(row: any): VentaRow {
 
         // ── Campos opcionales: no están en esta vista ────────────────────────
         rubro:                row['Familia'] ?? 'Otros',
-        cod_client:           '',
         razon_social:         '',
         cod_cond_venta:       '',
         desc_cond_venta:      '',
@@ -77,8 +102,12 @@ function mapVenta(row: any): VentaRow {
         cant_cuotas:          null,
         modalida_venta:       'Contado/Tarjeta',
         porcentaje_rentabilidad: rentabilidad,
-        tipo:                 null,
-        genero:               null,
+        tipo:                 row['TIPO (Adic.)'] ?? null,
+        genero:               row['GENERO (Adic.)'] ?? null,
+        cod_client:
+            row['Cód. Cliente'] != null && String(row['Cód. Cliente']).trim() !== ''
+                ? String(row['Cód. Cliente']).trim()
+                : '',
     };
 }
 
@@ -98,7 +127,7 @@ async function getAllVentas(desde?: string, hasta?: string): Promise<VentaRow[]>
         params.set('limit', '5000');
         params.set('page', '0');
 
-        const url = `${API_URL}/ventas?${params}`;
+        const url = `${apiRoot()}/ventas?${params}`;
         console.log('[salesService] Cache fill:', url);
         const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
@@ -142,6 +171,10 @@ function applyFiltersLocal(data: VentaRow[], f: VentasFilters): VentaRow[] {
         // Filtro por proveedor
         if (f.proveedores?.length && !f.proveedores.includes(row.proveedor ?? '')) return false;
 
+        if (f.tipos?.length && !f.tipos.includes(row.tipo ?? '')) return false;
+        if (f.generos?.length && !f.generos.includes(row.genero ?? '')) return false;
+        if (f.cliente?.trim() && String(row.cod_client ?? '').trim() !== f.cliente.trim()) return false;
+
         return true;
     });
 }
@@ -157,18 +190,12 @@ export async function fetchVentas(
     const pageIndex = Math.floor(from / PAGE_SIZE);
 
     const params = new URLSearchParams();
-    if (filters.fechaDesde) params.set('desde', filters.fechaDesde);
-    if (filters.fechaHasta) params.set('hasta', filters.fechaHasta);
-    if (filters.mediosPago?.length === 1) params.set('medioPago', filters.mediosPago[0]);
-    if (filters.familias?.length === 1) params.set('familia', filters.familias[0]);
-    if (filters.categorias?.length === 1) params.set('categoria', filters.categorias[0]);
-    filters.proveedores?.forEach(p => params.append('proveedor', String(p)));
-    filters.sucursales?.forEach(s => params.append('sucursal', String(s)));
+    appendVentasSqlFilters(params, filters);
     params.set('page', String(pageIndex));
     params.set('limit', String(PAGE_SIZE));
 
     try {
-        const url = `${API_URL}/ventas?${params}`;
+        const url = `${apiRoot()}/ventas?${params}`;
         console.log('[salesService] fetchVentas:', url);
         const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
@@ -189,7 +216,10 @@ export async function fetchVentas(
             mediosPago: filters.mediosPago?.length === 1 ? [] : filters.mediosPago,
             familias:   filters.familias?.length   === 1 ? [] : filters.familias,
             categorias: filters.categorias?.length === 1 ? [] : filters.categorias,
-            proveedores: filters.proveedores, // <-- Cambio clave: delegamos el filtro 100% al cliente
+            proveedores: filters.proveedores,
+            tipos: filters.tipos?.length ? [] as string[] : filters.tipos,
+            generos: filters.generos?.length ? [] as string[] : filters.generos,
+            cliente: filters.cliente?.trim() ? '' : filters.cliente,
         };
         rows = applyFiltersLocal(rows, serverFiltered as VentasFilters);
 
@@ -215,19 +245,13 @@ export interface VentasParaCobrosResult {
  */
 export async function fetchVentasParaCobros(filters: VentasFilters): Promise<VentasParaCobrosResult> {
     const params = new URLSearchParams();
-    if (filters.fechaDesde) params.set('desde', filters.fechaDesde);
-    if (filters.fechaHasta) params.set('hasta', filters.fechaHasta);
-    if (filters.mediosPago?.length === 1) params.set('medioPago', filters.mediosPago[0]);
-    if (filters.familias?.length === 1) params.set('familia', filters.familias[0]);
-    if (filters.categorias?.length === 1) params.set('categoria', filters.categorias[0]);
-    filters.proveedores?.forEach(p => params.append('proveedor', String(p)));
-    filters.sucursales?.forEach(s => params.append('sucursal', String(s)));
+    appendVentasSqlFilters(params, filters);
     params.set('page', '0');
     params.set('limit', '5000');
     if (filters.fechaDesde && filters.fechaHasta) params.set('incluirPeriodoAnterior', '1');
 
     try {
-        const url = `${API_URL}/ventas?${params}`;
+        const url = `${apiRoot()}/ventas?${params}`;
         const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
         const json = await response.json();
@@ -244,6 +268,9 @@ export async function fetchVentasParaCobros(filters: VentasFilters): Promise<Ven
             familias: filters.familias?.length === 1 ? [] : filters.familias,
             categorias: filters.categorias?.length === 1 ? [] : filters.categorias,
             proveedores: filters.proveedores,
+            tipos: filters.tipos?.length ? [] as string[] : filters.tipos,
+            generos: filters.generos?.length ? [] as string[] : filters.generos,
+            cliente: filters.cliente?.trim() ? '' : filters.cliente,
         };
         
         const serverFilteredAnterior = {
@@ -270,7 +297,7 @@ export async function fetchVentasParaCobros(filters: VentasFilters): Promise<Ven
  */
 export async function fetchSaldosCajas(): Promise<SaldoCajaRow[]> {
     try {
-        const url = `${API_URL}/saldos-cajas`;
+        const url = `${apiRoot()}/saldos-cajas`;
         const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
         const raw: any[] = await response.json();
@@ -301,14 +328,9 @@ export async function fetchVentasStats(filters: VentasFilters): Promise<{
     fechaMax: string | null;
 }> {
     const params = new URLSearchParams();
-    if (filters.fechaDesde) params.set('desde', filters.fechaDesde);
-    if (filters.fechaHasta) params.set('hasta', filters.fechaHasta);
-    if (filters.mediosPago?.length === 1) params.set('medioPago', filters.mediosPago[0]);
-    if (filters.familias?.length === 1) params.set('familia', filters.familias[0]);
-    if (filters.categorias?.length === 1) params.set('categoria', filters.categorias[0]);
-    filters.proveedores?.forEach(p => params.append('proveedor', String(p)));
-    
-    const url = `${API_URL}/ventas/stats?${params}`;
+    appendVentasSqlFilters(params, filters);
+
+    const url = `${apiRoot()}/ventas/stats?${params}`;
     console.log('[salesService] fetchVentasStats:', url);
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
@@ -323,17 +345,11 @@ export async function fetchVentasStats(filters: VentasFilters): Promise<{
 export async function fetchVentasAgregadas(filters: VentasFilters): Promise<DashboardMetrics> {
     try {
         const params = new URLSearchParams();
-        if (filters.fechaDesde) params.set('desde', filters.fechaDesde);
-        if (filters.fechaHasta) params.set('hasta', filters.fechaHasta);
-        // Filtros de valor único — el servidor los aplica en el WHERE
-        if (filters.mediosPago?.length === 1) params.set('medioPago', filters.mediosPago[0]);
-        if (filters.familias?.length === 1) params.set('familia', filters.familias[0]);
-        if (filters.categorias?.length === 1) params.set('categoria', filters.categorias[0]);
-        filters.proveedores?.forEach(p => params.append('proveedor', String(p)));
-        
+        appendVentasSqlFilters(params, filters);
+
         console.log('[Debug] Filtros enviados a /api/dashboard:', Array.from(params.entries()));
 
-        const url = `${API_URL}/dashboard?${params}`;
+        const url = `${apiRoot()}/dashboard?${params}`;
         console.log('[salesService] Dashboard fetch:', url);
         const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
@@ -355,10 +371,21 @@ export async function fetchVentasAgregadas(filters: VentasFilters): Promise<Dash
         // Helper: usa totalIVA (ya negativo para NC en SQL) como métrica principal
         const getImporte = (r: VentaRow) => r.totalIVA ?? r.imp_prop_c_iva ?? 0;
 
+        const totalFacturado = filtered.reduce((acc, r) => acc + getImporte(r), 0);
+        const margenTotal = filtered.reduce((acc, r) => {
+            if (isNotaCreditoTipo(r.t_comp)) return acc;
+            const c = r.costo;
+            if (c == null || c <= 0) return acc;
+            const pn = r.precioNeto ?? r.precio_neto ?? 0;
+            return acc + (pn - c * (r.cantidad ?? 0));
+        }, 0);
+        const rentabilidad = totalFacturado !== 0 ? (margenTotal / totalFacturado) * 100 : 0;
+
         const kpis: DashboardKPIs = {
             // SUM(totalIVA) — las Notas de Crédito restan porque totalIVA ya es negativo
-            totalFacturado: filtered.reduce((acc, r) => acc + getImporte(r), 0),
-            margenTotal: 0, rentabilidad: 0,
+            totalFacturado,
+            margenTotal,
+            rentabilidad,
             voucherCount: new Set(filtered.map(r => r.n_comp)).size
         };
 
@@ -443,16 +470,31 @@ export async function fetchRubros(range: DateRange): Promise<string[]> {
  * Mucho más eficiente que descargar filas: usa solo queries DISTINCT en SQL.
  */
 export async function fetchFilterOptions(range: DateRange): Promise<{
-    mediosPago: string[]; familias: string[]; categorias: string[]; sucursales: string[];
+    mediosPago: string[];
+    familias: string[];
+    categorias: string[];
+    sucursales: string[];
+    tipos: string[];
+    generos: string[];
+    clientes: string[];
 }> {
     const params = new URLSearchParams();
     if (range.fechaDesde) params.set('desde', range.fechaDesde);
     if (range.fechaHasta) params.set('hasta', range.fechaHasta);
-    const url = `${API_URL}/ventas/options?${params}`;
+    const url = `${apiRoot()}/ventas/options?${params}`;
     console.log('[salesService] fetchFilterOptions:', url);
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
-    return response.json();
+    const j = await response.json();
+    return {
+        mediosPago: j.mediosPago ?? [],
+        familias: j.familias ?? [],
+        categorias: j.categorias ?? [],
+        sucursales: j.sucursales ?? [],
+        tipos: j.tipos ?? [],
+        generos: j.generos ?? [],
+        clientes: j.clientes ?? [],
+    };
 }
 
 export async function fetchMediosPago(range: DateRange): Promise<string[]> {
@@ -488,8 +530,6 @@ export async function fetchCuotas(range: DateRange): Promise<number[]> {
 
 export const fetchFamilias = fetchRubros;
 export const fetchCategorias = (range: DateRange) => Promise.resolve(['General']);
-export const fetchTipos = (range: DateRange) => Promise.resolve(['Venta']);
-export const fetchGeneros = (range: DateRange) => Promise.resolve(['Unisex']);
 export async function fetchProveedores(filters: VentasFilters): Promise<string[]> {
     const all = await getAllVentas(filters.fechaDesde, filters.fechaHasta);
     const tempFilters = { ...filters, proveedores: [] }; // Ignoramos el filtro de proveedor actual para no vaciar la lista

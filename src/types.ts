@@ -41,7 +41,8 @@ export interface VentaRow {
   desc_cuenta?: string;
   cant_cuotas?: number | null;
   modalida_venta?: string;
-  porcentaje_rentabilidad?: number;
+  /** null en Notas de Crédito (no aplica rentabilidad) */
+  porcentaje_rentabilidad?: number | null;
   tipo?: string | null;
   genero?: string | null;
   proveedor?: string | null;
@@ -100,7 +101,9 @@ export interface VentasFilters {
   mediosPago: string[];        // medioPago (campo real de SQL)
   search: string;              // ilike en descripcio o cod_articu
   cuentas: string[];           // desc_cuenta (legacy)
-  clientes: string[];          // razon_social
+  clientes: string[];          // legacy / UI opcional (nombres)
+  /** Código de cliente (CTA02) — filtro exacto en servidor; vacío = sin filtro */
+  cliente: string;
   cuotas: number[];            // cant_cuotas seleccionadas
   comprobante: string;         // ilike en n_comp
   familias: string[];
@@ -177,6 +180,7 @@ export const getInitialFilters = (): VentasFilters => {
     search: '',
     cuentas: [],
     clientes: [],
+    cliente: '',
     cuotas: [],
     comprobante: '',
     familias: [],

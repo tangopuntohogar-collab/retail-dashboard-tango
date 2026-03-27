@@ -5,11 +5,13 @@ import { DashboardView } from './components/DashboardView';
 import { SalesTable } from './components/SalesTable';
 import { StockView } from './components/StockView';
 import { FilterSidebar } from './components/FilterSidebar';
-import { VentaRow, VentasFilters, DetailFilterOptions, getInitialFilters, DashboardMetrics } from './types';
+import { AIAnalysisPanel } from './components/AIAnalysisPanel';
+import { VentaRow, VentasFilters, DetailFilterOptions, getInitialFilters, DashboardMetrics, SaldoCajaRow } from './types';
+import { aggregateDetailMetrics } from './lib/metricsAggregator';
+import { getAISettings, type AISettings } from './lib/aiAnalysisService';
 import {
   fetchVentas, fetchVentasAgregadas, fetchVentasAgregadasPrevio, fetchVentasParaCobros, fetchSaldosCajas, PAGE_SIZE,
-  fetchFilterOptions, getMediosPagoFromCache, fetchTopClientes, fetchCuotas,
-  fetchTipos, fetchGeneros, fetchProveedores,
+  fetchFilterOptions, getMediosPagoFromCache, fetchProveedores,
   DateRange,
 } from './lib/salesService';
 import { motion, AnimatePresence } from 'motion/react';
@@ -39,15 +41,22 @@ export default function App() {
   const [dashPrevData, setDashPrevData] = useState<DashboardMetrics | null>(null);
   const [ventasParaCobros, setVentasParaCobros] = useState<VentaRow[]>([]);
   const [ventasAnterior, setVentasAnterior] = useState<VentaRow[]>([]);
-  const [saldosCajas, setSaldosCajas] = useState<import('../types').SaldoCajaRow[]>([]);
+  const [saldosCajas, setSaldosCajas] = useState<SaldoCajaRow[]>([]);
   const [tableData, setTableData] = useState<VentaRow[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [totalImporteGlobal, setTotalImporteGlobal] = useState(0);
   const [currentPage, setCurrentPage] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [aiSettings, setAiSettings] = useState<AISettings | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
+  useEffect(() => {
+    getAISettings()
+      .then(setAiSettings)
+      .catch(() => {});
+  }, []);
 
   // ── Helper para cargar opciones de filtros ────────────────────────────
   // Usa /api/ventas/options para obtener DISTINCT values en una sola llamada SQL.
@@ -56,12 +65,8 @@ export default function App() {
     setLoading(true);
     try {
       // Una sola llamada al servidor en vez de 9 fetches paralelos
-      const [opts, clientes, cuotas, tipos, generos, proveedores] = await Promise.all([
+      const [opts, proveedores] = await Promise.all([
         fetchFilterOptions(range),
-        fetchTopClientes(range),
-        fetchCuotas(range),
-        fetchTipos(range),
-        fetchGeneros(range),
         fetchProveedores(filters),
       ]);
       setOptions({
@@ -71,10 +76,10 @@ export default function App() {
         familias:   opts.familias,
         categorias: opts.categorias,
         cuentas:    [],
-        clientes,
-        cuotas,
-        tipos,
-        generos,
+        clientes:   opts.clientes,
+        cuotas:     [],
+        tipos:      opts.tipos,
+        generos:    opts.generos,
         proveedores,
       });
     } catch (e) {
@@ -179,7 +184,8 @@ export default function App() {
   // Re-fetcha cuando cambia cualquier filtro que el servidor ahora maneja
   }, [dashFilters.fechaDesde, dashFilters.fechaHasta,
       dashFilters.mediosPago, dashFilters.familias, dashFilters.categorias,
-      dashFilters.sucursales, dashFilters.proveedores]);
+      dashFilters.sucursales, dashFilters.proveedores,
+      dashFilters.tipos, dashFilters.generos, dashFilters.cliente]);
 
   useEffect(() => {
     console.log('[App] useEffect detailFilters triggered:', detailFilters);
@@ -204,6 +210,16 @@ export default function App() {
 
   const pageFrom = currentPage * PAGE_SIZE + 1;
   const pageTo = Math.min((currentPage + 1) * PAGE_SIZE, totalCount);
+
+  const detailAiPayload = useMemo(() => {
+    if (totalCount === 0) return null;
+    return aggregateDetailMetrics(
+      tableData,
+      detailFilters,
+      { totalRegistros: totalCount, totalImporte: totalImporteGlobal },
+      { rentabilidadMinPct: aiSettings?.umbrales.rentabilidadMinPct ?? 10 }
+    );
+  }, [tableData, detailFilters, totalCount, totalImporteGlobal, aiSettings]);
 
   return (
     <div className="flex h-screen w-full relative overflow-hidden bg-surface-dark">
@@ -287,8 +303,19 @@ export default function App() {
                 />
 
                 {/* Table + pagination */}
-                <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+                <div className="flex-1 flex flex-col min-w-0 overflow-hidden overflow-y-auto">
                   <SalesTable data={tableData} isLoading={isLoading} totalImporteGlobal={totalImporteGlobal} />
+                  <div className="px-8 pb-6 shrink-0">
+                    <AIAnalysisPanel
+                      screen="detail"
+                      payload={detailAiPayload}
+                      onSettingsSaved={() => {
+                        getAISettings()
+                          .then(setAiSettings)
+                          .catch(() => {});
+                      }}
+                    />
+                  </div>
 
                   {/* Pagination Footer */}
                   <div className="h-14 border-t border-border-dark bg-[#0f172a] shrink-0 flex items-center justify-between px-6 z-20">

@@ -1,0 +1,11 @@
+{
+  "provider": "gemini",
+  "umbrales": {
+    "rentabilidadMinPct": 10,
+    "coberturaCriticaDias": 7,
+    "coberturaAltaDias": 90,
+    "concentracionSucursalPct": 50,
+    "variacionVentasPct": 20,
+    "creditoFinancieraPct": 40
+  }
+}
