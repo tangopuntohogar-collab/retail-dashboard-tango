@@ -10,6 +10,47 @@ import { isNotaCreditoTipo } from './salesService';
 
 const CATEGORIAS_COBRO = ['EFECTIVO', 'TRANSFERENCIAS', 'TARJETA', 'CTA_CTE', 'CREDITO POR FINANCIERA'] as const;
 
+/** Listas vacías = sin filtro (todas / todos). Nunca null. */
+export interface FiltrosAplicadosVentasIA {
+  sucursales: string[];
+  familias: string[];
+  categorias: string[];
+  mediosPago: string[];
+  proveedores: string[];
+  fechaDesde: string;
+  fechaHasta: string;
+}
+
+export interface FiltrosAplicadosStockIA {
+  sucursales: string[];
+  fechaDesde: string;
+  fechaHasta: string;
+}
+
+function filtrosVentasIA(
+  fechaDesde: string,
+  fechaHasta: string,
+  src: Pick<VentasFilters, 'sucursales' | 'familias' | 'categorias' | 'mediosPago' | 'proveedores'>
+): FiltrosAplicadosVentasIA {
+  return {
+    sucursales: Array.isArray(src.sucursales) ? [...src.sucursales] : [],
+    familias: Array.isArray(src.familias) ? [...src.familias] : [],
+    categorias: Array.isArray(src.categorias) ? [...src.categorias] : [],
+    mediosPago: Array.isArray(src.mediosPago) ? [...src.mediosPago] : [],
+    proveedores: Array.isArray(src.proveedores) ? [...src.proveedores] : [],
+    fechaDesde,
+    fechaHasta,
+  };
+}
+
+function filtrosStockIA(filters: StockFilters): FiltrosAplicadosStockIA {
+  return {
+    sucursales: Array.isArray(filters.sucursales) ? [...filters.sucursales] : [],
+    fechaDesde: filters.fechaDesde,
+    fechaHasta: filters.fechaHasta,
+  };
+}
+
 function getCategoriaCobro(item: VentaRow): string {
   const medio = String(item.medioPago ?? '').toUpperCase();
   if (medio === 'CREDITO POR FINANCIERA' || (medio.includes('CREDITO') && medio.includes('FINANCIERA')))
@@ -44,6 +85,7 @@ export interface DashboardAggregatePayload {
     porSucursal: Record<string, Record<string, number>>;
   };
   saldosTesoreria: Array<{ sucursal: string; cuenta: string; saldo: number }>;
+  filtrosAplicados: FiltrosAplicadosVentasIA;
 }
 
 export function aggregateDashboardMetrics(
@@ -51,7 +93,15 @@ export function aggregateDashboardMetrics(
   cobrosVentas: VentaRow[],
   ventasAnterior: VentaRow[],
   saldosCajas: SaldoCajaRow[],
-  filters: { fechaDesde: string; fechaHasta: string }
+  filters: {
+    fechaDesde: string;
+    fechaHasta: string;
+    sucursales: string[];
+    familias: string[];
+    categorias: string[];
+    mediosPago: string[];
+    proveedores: string[];
+  }
 ): DashboardAggregatePayload {
   const totalFacturado = dashboardData?.kpis.totalFacturado ?? 0;
   const voucherCount = dashboardData?.kpis.voucherCount ?? 0;
@@ -126,6 +176,7 @@ export function aggregateDashboardMetrics(
     ventasPorSucursal,
     cobrosPivot: { porCategoria, porSucursal },
     saldosTesoreria,
+    filtrosAplicados: filtrosVentasIA(filters.fechaDesde, filters.fechaHasta, filters),
   };
 }
 
@@ -146,6 +197,7 @@ export interface DetailAggregatePayload {
     peoresArticulos: Array<{ descripcion: string; rentabilidad: number; monto: number }>;
   };
   distribucionPorSucursal: Array<{ sucursal: string; monto: number; pct: number }>;
+  filtrosAplicados: FiltrosAplicadosVentasIA;
 }
 
 function rentabilidadPct(row: VentaRow): number | null {
@@ -235,6 +287,7 @@ export function aggregateDetailMetrics(
       peoresArticulos,
     },
     distribucionPorSucursal,
+    filtrosAplicados: filtrosVentasIA(filters.fechaDesde, filters.fechaHasta, filters),
   };
 }
 
@@ -268,6 +321,7 @@ export interface StockAggregatePayload {
     sucursalConStock: string;
     stockDisponible: number;
   }>;
+  filtrosAplicados: FiltrosAplicadosStockIA;
 }
 
 export function aggregateStockMetrics(
@@ -369,5 +423,6 @@ export function aggregateStockMetrics(
     topSinVentasConStock: sinVentas.slice(0, 10),
     topSobrestock: sobre.slice(0, 10),
     desequilibrioSucursales: desequilibrioSucursales.slice(0, 10),
+    filtrosAplicados: filtrosStockIA(filters),
   };
 }

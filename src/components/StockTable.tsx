@@ -52,6 +52,10 @@ export const StockTable: React.FC<StockTableProps> = ({ data, isLoading, fechaDe
               <th className="px-4 py-3.5 w-[105px] whitespace-nowrap">Cód. Art.</th>
               <th className="px-4 py-3.5 min-w-[220px]">Descripción</th>
               <th className="px-4 py-3.5 min-w-[120px]">Familia</th>
+              <th className="px-4 py-3.5 min-w-[120px]">Categoría</th>
+              <th className="px-4 py-3.5 min-w-[120px]">Tipo Art.</th>
+              <th className="px-4 py-3.5 min-w-[120px]">Género</th>
+              <th className="px-4 py-3.5 min-w-[150px]">Proveedor</th>
               <th className="px-3 py-3 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Últ. Compra</th>
               <th className="px-3 py-3 text-right text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Costo Unit.</th>
               
@@ -91,7 +95,7 @@ export const StockTable: React.FC<StockTableProps> = ({ data, isLoading, fechaDe
           <tbody className="divide-y divide-border-dark bg-[#020617]">
             {!isLoading && data.length === 0 ? (
               <tr>
-                <td colSpan={5 + allSucursales.length + 3} className="px-5 py-12 text-center text-slate-500">
+                <td colSpan={9 + allSucursales.length + 3} className="px-5 py-12 text-center text-slate-500">
                   No se encontraron saldos de stock para los filtros seleccionados.
                 </td>
               </tr>
@@ -134,6 +138,18 @@ export const StockTable: React.FC<StockTableProps> = ({ data, isLoading, fechaDe
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
                       {item.familia || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
+                      {item.categoria || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
+                      {item.tipo_art || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
+                      {item.genero || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
+                      {item.proveedor || '-'}
                     </td>
                     <td className="px-4 py-3 text-right text-xs text-slate-400 font-mono whitespace-nowrap">
                       {item.fecha_ult_compra || '-'}
@@ -180,7 +196,7 @@ export const StockTable: React.FC<StockTableProps> = ({ data, isLoading, fechaDe
             <tfoot className="sticky bottom-0 z-20">
               <tr className="bg-[#0f172a] border-t-2 border-primary/60">
                 <td
-                  colSpan={5}
+                  colSpan={9}
                   className="px-4 py-3 text-right text-xs font-bold text-slate-300 tracking-widest uppercase whitespace-nowrap"
                 >
                   TOTALES POR SUCURSAL

@@ -193,14 +193,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
 
   const aiPayload = useMemo(() => {
     if (!data) return null;
-    return aggregateDashboardMetrics(
-      data,
-      ventasParaCobros,
-      ventasAnterior,
-      saldosCajas,
-      { fechaDesde: filters.fechaDesde, fechaHasta: filters.fechaHasta }
-    );
-  }, [data, ventasParaCobros, ventasAnterior, saldosCajas, filters.fechaDesde, filters.fechaHasta]);
+    return aggregateDashboardMetrics(data, ventasParaCobros, ventasAnterior, saldosCajas, {
+      fechaDesde: filters.fechaDesde,
+      fechaHasta: filters.fechaHasta,
+      sucursales: filters.sucursales ?? [],
+      familias: filters.familias ?? [],
+      categorias: filters.categorias ?? [],
+      mediosPago: filters.mediosPago ?? [],
+      proveedores: filters.proveedores ?? [],
+    });
+  }, [
+    data,
+    ventasParaCobros,
+    ventasAnterior,
+    saldosCajas,
+    filters.fechaDesde,
+    filters.fechaHasta,
+    filters.sucursales,
+    filters.familias,
+    filters.categorias,
+    filters.mediosPago,
+    filters.proveedores,
+  ]);
 
   /* ─── Spinner overlay ──────────────────────────────── */
   const Spinner = () => (

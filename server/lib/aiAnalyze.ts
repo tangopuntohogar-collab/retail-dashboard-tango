@@ -10,7 +10,33 @@ sin markdown, sin backticks:
 "insights": [{ "titulo": "string", "descripcion": "string" }]
 }
 Máximo 3 items por categoría. Solo incluí lo que tenga evidencia en los datos.
-Sé concreto y accionable. Usá español argentino informal. No uses emojis.`;
+Sé concreto y accionable. Usá español rioplatense profesional y claro. Evitá
+términos coloquiales, vulgares o informales. El tono
+debe ser el de un informe ejecutivo para gerencia. No uses emojis.`;
+
+const FILTROS_APLICADOS_CTX = `IMPORTANTE — CONTEXTO DE FILTROS APLICADOS:
+El payload incluye el campo filtrosAplicados con los filtros
+que el usuario seleccionó explícitamente. Los datos ya están
+acotados a esa selección. Aplicá estas reglas sin excepción:
+
+- Si filtrosAplicados.sucursales tiene valores → NO alertes
+  por concentración de ventas en esas sucursales.
+- Si filtrosAplicados.familias tiene valores → NO alertes
+  por concentración en esas familias de productos.
+- Si filtrosAplicados.categorias tiene valores → NO alertes
+  por concentración en esas categorías.
+- Si filtrosAplicados.mediosPago tiene valores → NO alertes
+  por dependencia de esos medios de pago.
+- Si filtrosAplicados.proveedores tiene valores → NO alertes
+  por concentración en esos proveedores.
+
+En todos estos casos, la concentración es ESPERADA porque
+el usuario filtró explícitamente esa dimensión. Solo alertá
+por concentración en dimensiones que NO fueron filtradas.
+
+Antes de generar cada alerta, verificá si corresponde a una
+dimensión filtrada. Si corresponde, descartala y buscá otro
+insight relevante en los datos.`;
 
 export function buildSystemPrompt(
   screen: 'dashboard' | 'detail' | 'stock',
@@ -35,7 +61,7 @@ con ventas activas (riesgo de quiebre), artículos con stock mayor a 0 pero sin 
 en el período (stock muerto), sobrestock con cobertura mayor a ${u.coberturaAltaDias} días,
 y desequilibrios entre sucursales del mismo artículo.`;
   }
-  return `${BASE_SYSTEM}\n\n${extra.trim()}`;
+  return `${BASE_SYSTEM}\n\n${extra.trim()}\n\n${FILTROS_APLICADOS_CTX}`;
 }
 
 const PARSE_ERROR_MSG = 'No se pudo parsear la respuesta del modelo de IA';
