@@ -27,6 +27,12 @@ const COLORES_COBRO: Record<string, string> = {
   'CREDITO POR FINANCIERA': '#ec4899',
 };
 
+function trendPct(actual: number, anterior: number | null | undefined): number {
+  if (anterior == null || anterior === 0 || !Number.isFinite(anterior)) return 0;
+  const t = ((actual - anterior) / Math.abs(anterior)) * 100;
+  return Math.round(t * 10) / 10;
+}
+
 interface DashboardViewProps {
   data: DashboardMetrics | null;
   prevData: DashboardMetrics | null;
@@ -55,10 +61,38 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
 
   /* ─── KPIs (Stats) ────────────────────────────────── */
   const stats = useMemo(() => {
-    if (!data) return { totalFacturado: 0, margenTotal: 0, rentabilidad: 0, ticketPromedio: 0 };
+    if (!data) {
+      return {
+        totalFacturado: 0,
+        margenTotal: 0,
+        rentabilidad: 0,
+        ticketPromedio: 0,
+        trendFacturado: 0,
+        trendMargen: 0,
+        trendRentab: 0,
+        trendTicket: 0,
+      };
+    }
     const { totalFacturado, margenTotal, rentabilidad, voucherCount } = data.kpis;
     const ticketPromedio = voucherCount > 0 ? totalFacturado / voucherCount : 0;
-    return { totalFacturado, margenTotal, rentabilidad, ticketPromedio };
+    const ant = data.kpisAnt;
+    const tfAnt = ant?.totalFacturado;
+    const mgAnt = ant?.margenTotal;
+    const rentAnt = ant?.rentabilidad;
+    const vcAnt = ant?.voucherCount;
+    const ticketAnt =
+      vcAnt != null && vcAnt > 0 && tfAnt != null ? tfAnt / vcAnt : null;
+
+    return {
+      totalFacturado,
+      margenTotal,
+      rentabilidad,
+      ticketPromedio,
+      trendFacturado: trendPct(totalFacturado, tfAnt),
+      trendMargen: trendPct(margenTotal, mgAnt),
+      trendRentab: trendPct(rentabilidad, rentAnt),
+      trendTicket: trendPct(ticketPromedio, ticketAnt),
+    };
   }, [data]);
 
   /* ─── Resumen de Cobros por Sucursal — misma fuente que Detalle (VentaRow[]) ─── */
@@ -185,10 +219,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ data, prevData, fi
 
         {/* KPI Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-          <StatsCard title="Total Facturado" value={formatCurrency(stats.totalFacturado)} trend={0} subtitle="Suma imp_prop_c_iva" icon="money" />
-          <StatsCard title="Margen Total" value={formatCurrency(stats.margenTotal)} trend={0} subtitle="Suma margen_contribucion" icon="money" />
-          <StatsCard title="% Rentabilidad" value={`${stats.rentabilidad.toFixed(1)}%`} trend={0} subtitle="Margen / Venta Total" icon="percent" />
-          <StatsCard title="Ticket Promedio" value={formatCurrency(stats.ticketPromedio)} trend={0} subtitle="Facturado / Comprobantes" icon="ticket" />
+          <StatsCard title="Total Facturado" value={formatCurrency(stats.totalFacturado)} trend={stats.trendFacturado} subtitle="Suma imp_prop_c_iva" icon="money" />
+          <StatsCard title="Margen Total" value={formatCurrency(stats.margenTotal)} trend={stats.trendMargen} subtitle="Suma margen_contribucion" icon="money" />
+          <StatsCard title="% Rentabilidad" value={`${stats.rentabilidad.toFixed(1)}%`} trend={stats.trendRentab} subtitle="Margen / Venta Total" icon="percent" />
+          <StatsCard title="Ticket Promedio" value={formatCurrency(stats.ticketPromedio)} trend={stats.trendTicket} subtitle="Facturado / Comprobantes" icon="ticket" />
         </div>
 
         {/* Charts Row — Ventas por Sucursal + Mix de Pagos */}

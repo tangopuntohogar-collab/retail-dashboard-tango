@@ -43,6 +43,12 @@ function writeCollapsedToStorage(collapsed: boolean): void {
   }
 }
 
+function isAIParseError(
+  r: AIAnalysisResult | null
+): r is AIAnalysisResult & { error: true; mensaje: string; raw: string } {
+  return r != null && (r as { error?: unknown }).error === true;
+}
+
 interface AIAnalysisPanelProps {
   screen: 'dashboard' | 'detail' | 'stock';
   payload: object | null;
@@ -164,7 +170,24 @@ export const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({
                 </div>
               )}
 
-              {!loading && !error && result && (
+              {!loading && !error && result && isAIParseError(result) && (
+                <div
+                  className="rounded-lg border border-amber-500/50 bg-amber-500/15 text-amber-100 p-3 space-y-2"
+                  role="alert"
+                >
+                  <p className="text-sm font-medium">{result.mensaje}</p>
+                  <details className="text-xs text-amber-200/90">
+                    <summary className="cursor-pointer select-none hover:underline outline-none focus-visible:ring-1 focus-visible:ring-amber-400 rounded">
+                      Ver respuesta cruda
+                    </summary>
+                    <pre className="mt-2 p-2 rounded-md bg-black/35 border border-amber-900/40 overflow-x-auto whitespace-pre-wrap break-all text-slate-300 max-h-48 overflow-y-auto">
+                      {result.raw}
+                    </pre>
+                  </details>
+                </div>
+              )}
+
+              {!loading && !error && result && !isAIParseError(result) && (
                 <>
                   {crit > 0 && (
                     <section>

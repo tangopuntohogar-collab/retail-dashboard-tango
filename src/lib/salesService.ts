@@ -346,6 +346,7 @@ export async function fetchVentasAgregadas(filters: VentasFilters): Promise<Dash
     try {
         const params = new URLSearchParams();
         appendVentasSqlFilters(params, filters);
+        params.set('incluirPeriodoAnterior', '1');
 
         console.log('[Debug] Filtros enviados a /api/dashboard:', Array.from(params.entries()));
 

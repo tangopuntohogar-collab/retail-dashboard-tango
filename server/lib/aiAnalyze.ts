@@ -38,20 +38,65 @@ y desequilibrios entre sucursales del mismo artículo.`;
   return `${BASE_SYSTEM}\n\n${extra.trim()}`;
 }
 
-export function parseAIJson(raw: string): {
-  alertas_criticas: Array<{ titulo: string; descripcion: string }>;
-  alertas_atencion: Array<{ titulo: string; descripcion: string }>;
-  insights: Array<{ titulo: string; descripcion: string }>;
+const PARSE_ERROR_MSG = 'No se pudo parsear la respuesta del modelo de IA';
+const RAW_MAX = 500;
+
+function truncateRaw(s: string): string {
+  return s.length > RAW_MAX ? s.slice(0, RAW_MAX) : s;
+}
+
+function parseErrorPayload(original: string): {
+  error: true;
+  mensaje: string;
+  raw: string;
 } {
-  const clean = raw.replace(/```json|```/g, '').trim();
-  const parsed = JSON.parse(clean) as {
-    alertas_criticas?: unknown;
-    alertas_atencion?: unknown;
-    insights?: unknown;
-  };
   return {
-    alertas_criticas: Array.isArray(parsed.alertas_criticas) ? (parsed.alertas_criticas as []) : [],
-    alertas_atencion: Array.isArray(parsed.alertas_atencion) ? (parsed.alertas_atencion as []) : [],
-    insights: Array.isArray(parsed.insights) ? (parsed.insights as []) : [],
+    error: true,
+    mensaje: PARSE_ERROR_MSG,
+    raw: truncateRaw(original),
   };
+}
+
+export type ParseAIJsonResult =
+  | {
+      error: true;
+      mensaje: string;
+      raw: string;
+    }
+  | {
+      alertas_criticas: Array<{ titulo: string; descripcion: string }>;
+      alertas_atencion: Array<{ titulo: string; descripcion: string }>;
+      insights: Array<{ titulo: string; descripcion: string }>;
+    };
+
+export function parseAIJson(raw: string): ParseAIJsonResult {
+  const original = typeof raw === 'string' ? raw : String(raw);
+
+  const fence = /```json\s*([\s\S]*?)```/i.exec(original);
+  let candidate: string;
+  if (fence?.[1] != null) {
+    candidate = fence[1].trim();
+  } else {
+    const start = original.indexOf('{');
+    const end = original.lastIndexOf('}');
+    if (start === -1 || end === -1 || end <= start) {
+      return parseErrorPayload(original);
+    }
+    candidate = original.slice(start, end + 1).trim();
+  }
+
+  try {
+    const parsed = JSON.parse(candidate) as {
+      alertas_criticas?: unknown;
+      alertas_atencion?: unknown;
+      insights?: unknown;
+    };
+    return {
+      alertas_criticas: Array.isArray(parsed.alertas_criticas) ? (parsed.alertas_criticas as []) : [],
+      alertas_atencion: Array.isArray(parsed.alertas_atencion) ? (parsed.alertas_atencion as []) : [],
+      insights: Array.isArray(parsed.insights) ? (parsed.insights as []) : [],
+    };
+  } catch {
+    return parseErrorPayload(original);
+  }
 }

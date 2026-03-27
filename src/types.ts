@@ -269,6 +269,8 @@ export interface TopArticle {
 
 export interface DashboardMetrics {
   kpis: DashboardKPIs;
+  /** KPIs del período anterior (mismo largo en días); solo si el API se pidió con incluirPeriodoAnterior=1 */
+  kpisAnt?: DashboardKPIs;
   stacked_data: StackedDataPoint[];
   cobros_por_medio_sucursal?: CobroPorMedioSucursal[];
   top_articles: TopArticle[];

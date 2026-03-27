@@ -663,16 +663,34 @@ app.get('/api/dashboard', async (req, res) => {
         const mkParams = (): VentasQueryFilterParams => ventasFilterPayloadFromQuery(q);
         const sucLog = parseVentasQueryArrays(q).sucursales;
 
-        console.log(`[RETAIL] /api/dashboard: ${q.desde} → ${q.hasta}${q.medioPago ? ' mp=' + q.medioPago : ''}${sucLog.length ? ' suc=' + sucLog.join(',') : ''}`);
+        const incluirKpisAnt = q.incluirPeriodoAnterior === '1';
+        const desdeStr = String(q.desde);
+        const hastaStr = String(q.hasta);
+        const utcNoon = (iso: string) => {
+            const [y, m, d] = iso.split('-').map((n) => parseInt(n, 10));
+            return Date.UTC(y, m - 1, d, 12, 0, 0);
+        };
+        const addDaysISO = (iso: string, deltaDays: number): string => {
+            const [y, m, d] = iso.split('-').map((n) => parseInt(n, 10));
+            const dt = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+            dt.setUTCDate(dt.getUTCDate() + deltaDays);
+            return dt.toISOString().slice(0, 10);
+        };
+        const N = Math.floor((utcNoon(hastaStr) - utcNoon(desdeStr)) / 86400000) + 1;
+        const qPrev: Record<string, string | string[] | undefined> = {
+            ...q,
+            desde: addDaysISO(desdeStr, -N),
+            hasta: addDaysISO(hastaStr, -N),
+        };
+        const mkParamsPrev = (): VentasQueryFilterParams => ventasFilterPayloadFromQuery(qPrev);
+
+        console.log(`[RETAIL] /api/dashboard: ${q.desde} → ${q.hasta}${q.medioPago ? ' mp=' + q.medioPago : ''}${sucLog.length ? ' suc=' + sucLog.join(',') : ''}${incluirKpisAnt ? ` [kpisAnt N=${N} → ${qPrev.desde}..${qPrev.hasta}]` : ''}`);
         const pool = await ensureConnection();
 
-        const [kpisResult, sucursalResult, cobrosResult] = await Promise.all([
-
-            // 1. KPIs globales — mismo JOIN que /api/ventas (CTA_ARTICULO) para costo; margen sin NC y sin costo ≤ 0
-            (() => {
-                const r = pool.request();
-                const w = buildWhere(r, mkParams());
-                return r.query(`
+        const kpiQuery = (paramsFn: () => VentasQueryFilterParams) => {
+            const r = pool.request();
+            const w = buildWhere(r, paramsFn());
+            return r.query(`
                     SELECT
                         SUM(V.[Total cIVA]) AS totalFacturado,
                         COUNT(DISTINCT V.[Nro. Comprobante]) AS voucherCount,
@@ -690,9 +708,10 @@ app.get('/api/dashboard', async (req, res) => {
                     FROM Dashboard_Ventas_Local V
                     LEFT JOIN CTA_ARTICULO ON V.[Cód. Artículo] COLLATE DATABASE_DEFAULT = CTA_ARTICULO.COD_CTA_ARTICULO COLLATE DATABASE_DEFAULT
                     ${w}`);
-            })(),
+        };
 
-            // 2. Ventas por Sucursal
+        const parallel: Promise<any>[] = [
+            kpiQuery(mkParams),
             (() => {
                 const r = pool.request();
                 const w = buildWhere(r, mkParams());
@@ -701,8 +720,6 @@ app.get('/api/dashboard', async (req, res) => {
                     GROUP BY [Nro. Sucursal]
                     ORDER BY monto DESC`);
             })(),
-
-            // 3. Cobros por Sucursal y Medio de Pago (para Resumen de Cobros)
             (() => {
                 const r = pool.request();
                 const w = buildWhere(r, mkParams());
@@ -711,7 +728,16 @@ app.get('/api/dashboard', async (req, res) => {
                     GROUP BY [Nro. Sucursal], [Medio de Pago]
                     ORDER BY [Nro. Sucursal], monto DESC`);
             })(),
-        ]);
+        ];
+        if (incluirKpisAnt) {
+            parallel.push(kpiQuery(mkParamsPrev));
+        }
+
+        const results = await Promise.all(parallel);
+        const kpisResult = results[0];
+        const sucursalResult = results[1];
+        const cobrosResult = results[2];
+        const kpisAntResult = incluirKpisAnt ? results[3] : null;
 
         const kpi = kpisResult.recordset[0] ?? {};
 
@@ -732,7 +758,7 @@ app.get('/api/dashboard', async (req, res) => {
         const margenTotal = Number(kpi.margenTotal ?? 0);
         const rentabilidad = totalFacturado !== 0 ? (margenTotal / totalFacturado) * 100 : 0;
 
-        const payload = {
+        const payload: Record<string, unknown> = {
             kpis: {
                 totalFacturado,
                 margenTotal,
@@ -744,7 +770,19 @@ app.get('/api/dashboard', async (req, res) => {
             top_articles: [],
             rubro_points: [],
         };
-        console.log(`[RETAIL] /api/dashboard: fact=$${payload.kpis.totalFacturado.toFixed(0)} margen=$${payload.kpis.margenTotal.toFixed(0)} rent=${payload.kpis.rentabilidad.toFixed(1)}% suc=${sucursalResult.recordset.length}`);
+        if (incluirKpisAnt && kpisAntResult) {
+            const ka = kpisAntResult.recordset[0] ?? {};
+            const tfAnt = Number(ka.totalFacturado ?? 0);
+            const mgAnt = Number(ka.margenTotal ?? 0);
+            const rentAnt = tfAnt !== 0 ? (mgAnt / tfAnt) * 100 : 0;
+            payload.kpisAnt = {
+                totalFacturado: tfAnt,
+                margenTotal: mgAnt,
+                rentabilidad: rentAnt,
+                voucherCount: Number(ka.voucherCount ?? 0),
+            };
+        }
+        console.log(`[RETAIL] /api/dashboard: fact=$${totalFacturado.toFixed(0)} margen=$${margenTotal.toFixed(0)} rent=${rentabilidad.toFixed(1)}% suc=${sucursalResult.recordset.length}`);
         res.json(payload);
     } catch (err) {
         console.error('[RETAIL] Error SQL /api/dashboard:', err);
